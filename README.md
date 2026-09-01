@@ -45,29 +45,69 @@ swiftc -o parsecheck \
 ```
 
 Confirmed round-tripping: `&` in titles, `Surname, Given` author reversal,
-publisher and year off the citation line, page-less location-only highlights,
+publisher and year off a citation line, page-less location-only highlights,
 roman-numeral pages, notes folded onto their passage, standalone notes left
 alone, and a passage that literally contains `class="noteText"` not opening a
 phantom block.
 
+Then repeated on **real records scraped from the live notebook page** — a
+book's export with a genuine note attached to its highlight — which
+the parser read back as one passage carrying that note, an `aqua` highlight
+preserved, and no unparsed headings.
+
 ## Where this is thinner than the app's export
 
-The web notebook simply does not carry everything the device does. The script
-stays silent rather than guessing, and the parser treats all of these as
-absent:
+Checked against a real signed-in shelf of 263 books, not assumed. The web
+notebook does not carry everything the device does; the script stays silent
+rather than guessing, and the parser treats all of these as absent:
 
 - **No chapter headings.** The app's export writes a `sectionHeading` div per
-  chapter, from the book's table of contents. The web page has no equivalent,
-  so every passage imports with `section == nil`.
-- **No subsections.** For the same reason there is no `Subsection > Page N`
-  in the heading — which also means Legium's anthology *piece* detection and
-  its inlined-heading lift have nothing to work with on these files.
+  chapter. Nothing on the notebook page carries one, so every passage imports
+  with `section == nil`.
+- **No subsections.** No `Subsection > Page N` in the heading either — which
+  means Legium's anthology *piece* detection and its inlined-heading lift have
+  nothing to work with on these files.
 - **No bookmarks.** The web notebook lists highlights and notes only.
-- **Citation is best-effort.** Publisher and year come through only when the
-  page offers a citation line; otherwise the div is omitted entirely.
+- **No citation, so no publisher and no year.** Confirmed absent from both the
+  fragment and the assembled page — the word "citation" appears nowhere. The
+  `citation` div is therefore never written. (`writeNotebook` still supports
+  one if a caller supplies it, italics and all, since the format allows it.)
 
 If chapter context matters for a particular book, export that one from the
 reading app itself — the two formats are the same, so it drops straight in.
+
+## What the page actually gives you
+
+Findings from the live page, which is why the selectors are what they are:
+
+- The `?asin=` response is a **fragment**: two hidden inputs and then the
+  annotation rows, with no `#kp-notebook-annotations` wrapper. Parsing falls
+  back to the document body so both that and the assembled page work.
+- Those hidden inputs are `kp-notebook-content-limit-state` and
+  `kp-notebook-annotations-next-page-start`, carried **as classes** in the
+  fragment and as ids on the assembled page. Both spellings are matched.
+- **Pagination is load-bearing.** One sampled book returned 97 highlights on
+  its first page and 162 across three. Reading only the first page silently
+  loses a third of a book.
+- A header names **either** a page or a location, never both — but the hidden
+  `#kp-annotation-location` input holds the true location regardless. On a
+  page-showing book the header reads `Page: 195` while the input says `2119`,
+  so both are recovered and written as `Page 195 · Location 2119`.
+- Locations print with thousands separators (`Location: 1,234`); digits are
+  stripped out before use.
+- Colours seen in the wild: `yellow`, `blue`, `aqua`. All are names Legium's
+  own template already styles.
+- A row with no note still carries an `#annotationNoteHeader`, hidden via
+  `aok-hidden`. Emptiness of `#note` is what decides, not the header.
+
+### One known wrinkle
+
+Authors come from the library rail in natural order (`Ines Varga`), whereas
+the app's export writes `Surname, Given`. Legium reverses on a *single* comma,
+so a rail author with exactly one comma would be flipped. On this shelf that is
+1 book in 263, and Amazon's metadata for it is already scrambled
+(`"Lee Ortiz and Kim;Novak A Park, Jo;Reyes"`), so there is
+nothing to preserve. 244 of 263 have no comma at all and pass through untouched.
 
 ## Config
 

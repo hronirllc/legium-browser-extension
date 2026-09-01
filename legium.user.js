@@ -206,19 +206,24 @@
         libraryBook: '#kp-notebook-library .kp-notebook-library-each-book',
         bookTitle: 'h2.kp-notebook-searchable, h2',
         bookAuthor: 'p.kp-notebook-searchable, p.a-color-secondary',
+        // Absent from the fetched fragment, which is a bare list of rows. Only
+        // the assembled page has this wrapper, so it is a hint, not a
+        // requirement — see `annotationsRoot`.
         annotationRoot: '#kp-notebook-annotations',
         annotationRow: '.a-row.a-spacing-base',
-        highlightText: '#highlight, .kp-notebook-highlight span',
+        highlightText: '#highlight',
         noteText: '#note',
         highlightHeader: '#annotationHighlightHeader',
         noteHeader: '#annotationNoteHeader',
-        highlightBox: '[class*="kp-notebook-highlight"]',
+        // The trailing dash matters: the same element also carries a bare
+        // `kp-notebook-highlight`, which names no colour.
+        highlightBox: '[class*="kp-notebook-highlight-"]',
         location: '#kp-annotation-location',
-        limitState: '#kp-notebook-content-limit-state',
-        nextPageStart: '#kp-notebook-annotations-next-page-start',
-        paneTitle: '.kp-notebook-metadata h3, h3.kp-notebook-metadata',
-        paneAuthor: 'p.kp-notebook-metadata',
-        citation: '#kp-notebook-bookmetadata-citation, .kp-notebook-citation',
+        // Carried as ids on the assembled page and as classes in the fragment.
+        // Both spellings, or long books stop after their first page.
+        limitState: '#kp-notebook-content-limit-state, .kp-notebook-content-limit-state',
+        nextPageStart:
+            '#kp-notebook-annotations-next-page-start, .kp-notebook-annotations-next-page-start',
     };
 
     // ------------------------------------------------------------- utilities
@@ -297,53 +302,15 @@
     }
 
     /**
-     * Title, author and citation as the annotations pane states them.
+     * Where a page's annotation rows live.
      *
-     * Preferred over the library rail's copy because the rail writes the author
-     * as "By: Sam Reyes" for display, and the pane does not.
+     * `?asin=` returns a fragment — two hidden inputs and then the rows, with no
+     * wrapper around them — while the assembled page nests the same rows inside
+     * `#kp-notebook-annotations`. Falling back to the document itself covers
+     * both without caring which one arrived.
      */
-    function readBookMetadata(doc) {
-        const title = textOf(firstMatch(doc, SELECTORS.paneTitle));
-        const author = textOf(firstMatch(doc, SELECTORS.paneAuthor));
-        return {
-            title,
-            author: author.replace(/^By:\s*/i, ''),
-            citation: readCitation(doc),
-        };
-    }
-
-    /**
-     * The citation line as escaped markup, keeping its italics.
-     *
-     * Flattening this to text would cost the publisher: the parser has no label
-     * to anchor on — the line reads "MLA", "APA" or "Chicago Style" depending on
-     * the reader's choice — so it measures the publisher from the closing `</i>`
-     * of the italicised title to the year. That one tag is the landmark, and it
-     * is the only one kept; everything else is escaped like any other text.
-     *
-     * Returns markup, not text. It is the one field `writeNotebook` must not
-     * escape a second time.
-     */
-    function readCitation(root) {
-        const node = firstMatch(root, SELECTORS.citation);
-        if (!node) return '';
-
-        let out = '';
-        (function walk(parent) {
-            Array.prototype.forEach.call(parent.childNodes, (child) => {
-                if (child.nodeType === 3) {
-                    out += esc(child.nodeValue);
-                    return;
-                }
-                if (child.nodeType !== 1) return;
-                const italic = /^(I|EM|CITE)$/.test(child.tagName);
-                if (italic) out += '<i>';
-                walk(child);
-                if (italic) out += '</i>';
-            });
-        })(node);
-
-        return out.replace(/\s+/g, ' ').trim();
+    function annotationsRoot(doc) {
+        return firstMatch(doc, SELECTORS.annotationRoot) || doc.body || doc;
     }
 
     /**
@@ -383,10 +350,7 @@
      * is exactly the adjacency the parser folds back together.
      */
     function readAnnotations(doc) {
-        const root = firstMatch(doc, SELECTORS.annotationRoot);
-        if (!root) return [];
-
-        const rows = root.querySelectorAll(SELECTORS.annotationRow);
+        const rows = annotationsRoot(doc).querySelectorAll(SELECTORS.annotationRow);
         const records = [];
 
         rows.forEach((row) => {
@@ -425,7 +389,6 @@
     /** One book, following the pane's pagination to the end. */
     async function fetchBook(book) {
         const records = [];
-        let metadata = null;
         let limitState = '';
         let token = '';
         let guard = 0;
@@ -437,7 +400,6 @@
                 `&token=${encodeURIComponent(token)}`;
             const doc = await fetchDocument(url);
 
-            if (!metadata) metadata = readBookMetadata(doc);
             records.push(...readAnnotations(doc));
 
             limitState = valueOf(doc, SELECTORS.limitState);
@@ -446,10 +408,14 @@
             if (token) await sleep(CONFIG.fetchDelayMs);
         } while (token && guard < 200);
 
+        // Title and author come from the library rail because the fragment states
+        // neither. There is no citation to be had: the notebook page carries no
+        // publisher, no year and no citation line anywhere, so that div is simply
+        // never written and the parser reads both fields as absent.
         return {
-            title: (metadata && metadata.title) || book.title,
-            author: (metadata && metadata.author) || book.author.replace(/^By:\s*/i, ''),
-            citation: (metadata && metadata.citation) || '',
+            title: book.title,
+            author: book.author.replace(/^By:\s*/i, ''),
+            citation: '',
             records,
         };
     }
@@ -502,7 +468,11 @@
         // Omitted rather than faked when the page does not offer one: the parser
         // reads only publisher and year from it, and both are better absent than
         // guessed.
-        // Already escaped by `readCitation`, which keeps the italics deliberately.
+        // Written only if a caller supplies one. Nothing on the notebook page
+        // does — the format allows it, Amazon's web copy just has no citation to
+        // give — and an absent div is what the parser expects in that case.
+        // Passed through unescaped so an `<i>` survives: the publisher is read
+        // from the closing `</i>` of the italicised title to the year.
         if (book.citation) {
             parts.push(
                 `            <div class="citation">\n` +
@@ -659,13 +629,17 @@
         const log = makeLogger(panel.querySelector('#legium-export-log'));
         const count = panel.querySelector('#legium-export-count');
 
+        // Kept ticking rather than stopping at the first non-zero read: the rail
+        // renders server-side and arrives complete, but a shelf still streaming
+        // in would otherwise leave a stale, too-small number on display right
+        // where it would be believed.
         const settle = setInterval(() => {
-            const library = readLibrary();
-            if (!library.length) return;
-            clearInterval(settle);
-            count.textContent = `${library.length} book(s) on your shelf.`;
+            const found = readLibrary().length;
+            count.textContent = found
+                ? `${found} book(s) on your shelf.`
+                : 'Reading your library…';
         }, 500);
-        setTimeout(() => clearInterval(settle), 15000);
+        setTimeout(() => clearInterval(settle), 20000);
 
         panel.querySelector('#legium-export-run').addEventListener('click', () => {
             run(panel, log).catch((error) => log(`Stopped: ${error}`, true));
@@ -677,8 +651,8 @@
     // redesigns the page, and letting the emitter be tested off-browser against
     // Legium's own parser. `start` is what needs a page; nothing else here does.
     globalThis.legiumExport = {
-        readLibrary, fetchBook, fetchDocument, readAnnotations, readBookMetadata,
-        readPlace, readColour, readCitation, writeNotebook, writeRecord, safeFilename, esc,
+        readLibrary, fetchBook, fetchDocument, readAnnotations,
+        readPlace, readColour, annotationsRoot, writeNotebook, writeRecord, safeFilename, esc,
         SELECTORS, CONFIG,
     };
 
