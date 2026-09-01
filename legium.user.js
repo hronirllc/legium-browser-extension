@@ -290,15 +290,27 @@
         throw lastError;
     }
 
-    /** Every book on the shelf, from the library rail on the left. */
+    /**
+     * Every book on the shelf, from the library rail on the left.
+     *
+     * De-duplicated by ASIN, because the rail really does list the same book
+     * twice — 13 of 263 on the shelf this was written against, each pair
+     * carrying identical annotations. Left in, a duplicate costs a second
+     * fetch of the same book and writes it out again under a second filename.
+     */
     function readLibrary() {
+        const seen = new Set();
         return Array.from(document.querySelectorAll(SELECTORS.libraryBook))
             .map((row) => ({
                 asin: row.id || '',
                 title: textOf(firstMatch(row, SELECTORS.bookTitle)),
                 author: textOf(firstMatch(row, SELECTORS.bookAuthor)),
             }))
-            .filter((book) => book.asin);
+            .filter((book) => {
+                if (!book.asin || seen.has(book.asin)) return false;
+                seen.add(book.asin);
+                return true;
+            });
     }
 
     /**
