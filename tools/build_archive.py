@@ -21,7 +21,15 @@ duplicating everything.
 import argparse, hashlib, json, unicodedata, uuid
 
 NAMESPACE = uuid.UUID("6f9e5b3a-2c41-4d8e-9a17-5b0c8e2d4f36")
-ORIGIN = "import.notebook-html"
+# Named for the format the records were read from, following EntryOrigin's own
+# rule that a case names a format rather than the app that emitted it. These came
+# off the notebook *web page*, which is a thinner thing than the notebook export
+# an e-reader writes — no chapters, no bookmarks — so it earns its own lane.
+#
+# Legium has no matching case, and does not need one: originRaw is plain text and
+# "everything imported" is answered by the `import.` prefix, which is exactly the
+# unknown-lane case that design anticipates.
+ORIGIN = "import.notebook-web"
 NOTE_ANCHOR_SPAN = 10   # HighlightImport.noteAnchorSpan
 
 

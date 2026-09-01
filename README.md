@@ -187,3 +187,23 @@ python3 tools/build_archive.py out/web-export.json out/legium-web.json --only ne
 Both archives decode against Legium's own `LegiumArchive` wire format with no
 duplicate or orphaned records, and all 233 HTML files parse with
 `NotebookExportParser` with no unreadable headings.
+
+### Origin
+
+Entries are stamped `import.notebook-web`, not `import.notebook-html`. Legium
+has no case for it and needs none: `originRaw` is plain text and "was this
+imported" is answered by the `import.` prefix — the unknown-lane case
+`EntryOrigin` is deliberately designed for. The name follows that enum's rule of
+naming a **format** rather than a product: these came off the notebook *web
+page*, which carries neither chapters nor bookmarks, so it is genuinely a
+different source from the export an e-reader writes.
+
+Note that this only applies to the JSON archives. Importing the HTML files
+through Legium's own notebook import stamps them `import.notebook-html`, because
+that path passes the case in itself.
+
+**If you already imported an earlier build of these files**, the new origin will
+not reach those entries: the archive import skips a record whose `updatedAt` is
+not newer than the copy already held, and timestamps here are deterministic so
+that re-running is never destructive. Delete the affected entries first, or
+accept the old stamp on them.
