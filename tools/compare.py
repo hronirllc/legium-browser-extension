@@ -144,6 +144,9 @@ def main():
     p.add_argument("archive")
     p.add_argument("web_json")
     p.add_argument("--verbose", action="store_true")
+    p.add_argument("--emit-new", metavar="FILE",
+                   help="write the ASINs of web books the archive does not hold, "
+                        "one per line — the set that is safe to import as-is")
     args = p.parse_args()
 
     books = load_archive(args.archive)
@@ -190,6 +193,15 @@ def main():
             print(f"\n  {title[:50]}  similarity {s:.3f}")
             print(f"    app: {a.get('text','')[:150]!r}")
             print(f"    web: {w['text'][:150]!r}")
+
+    if args.emit_new:
+        held = {title_key(b["title"]) for b in books.values()}
+        fresh = [w for w in web_books if title_key(w["title"]) not in held and w["records"]]
+        with open(args.emit_new, "w", encoding="utf-8") as fh:
+            for w in fresh:
+                fh.write(w["asin"] + "\n")
+        print(f"\nsafe to import ({len(fresh)} books, "
+              f"{sum(len(w['records']) for w in fresh)} annotations) -> {args.emit_new}")
 
     if missing_from_web:
         print(f"\n--- in the archive, absent from the web export ---")

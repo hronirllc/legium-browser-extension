@@ -139,8 +139,15 @@ Findings from the live page, which is why the selectors are what they are:
   so both are recovered and written as `Page 195 · Location 2119`.
 - Locations print with thousands separators (`Location: 1,234`); digits are
   stripped out before use.
-- Colours seen in the wild: `yellow`, `blue`, `aqua`. All are names Legium's
-  own template already styles.
+- Colours come from the CSS class, **not** from the header's label, and the two
+  disagree: a highlight the header calls `Aqua highlight` carries the class
+  `kp-notebook-highlight-blue` (28 of 29 sampled). The class is the correct
+  source, because the reading app's own export writes `annotation_blue` for that
+  colour too — reading the label instead would give web-exported books a colour
+  string no app-exported book ever uses, and Legium's `highlightColours` would
+  then report two colours for a shelf highlighted in one.
+- Across all 263 books only two class values occur: `yellow` (4,678) and `blue`
+  (162).
 - A row with no note still carries an `#annotationNoteHeader`, hidden via
   `aok-hidden`. Emptiness of `#note` is what decides, not the header.
 

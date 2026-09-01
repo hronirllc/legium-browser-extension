@@ -331,7 +331,15 @@
         };
     }
 
-    /** The highlight colour, from the class the pane paints the box with. */
+    /**
+     * The highlight colour, from the class the pane paints the box with.
+     *
+     * The class rather than the header's label, which disagrees with it: the
+     * header calls this colour "Aqua highlight" while the class calls it
+     * `blue`, and the reading app's own export writes `blue` as well. Reading
+     * the label would give these files a colour string no app export uses.
+     * The header is consulted only when no class is present at all.
+     */
     function readColour(row) {
         const box = firstMatch(row, SELECTORS.highlightBox);
         const match = box && (box.className.match(/kp-notebook-highlight-(\w+)/) || []);
