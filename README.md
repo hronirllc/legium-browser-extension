@@ -55,6 +55,50 @@ book's export with a genuine note attached to its highlight — which
 the parser read back as one passage carrying that note, an `aqua` highlight
 preserved, and no unparsed headings.
 
+## Checked against the app's own exports
+
+Four books that had been exported from the reading app were re-exported from the
+web and compared record by record, hashing each passage's text on both sides.
+
+**The Steady Hand — 48 of 48, byte-identical.** Every location matched,
+every passage hashed the same, and the one note came through with the same
+bytes. The only difference is that the app placed the note at location 1114 and
+the web places it at 1113; both fold onto the same passage.
+
+**Harbour Lights — 12 of 13, two passages differing.**
+
+- The blue **bookmark** at location 1727 is absent, as expected.
+- Location 1232 differs by 14 bytes. The app captured
+  `underneath—“ The Harbour Inn:—Open Late.”`; the web gives
+  `“The Harbour Inn:—Open Late.”`. The app export bled in the run of body
+  text preceding the highlight — the web copy is the cleaner of the two.
+- Location 14862 differs by one byte: a footnote marker, spaced as
+  `Islands, 2` in the app export and `Islands,2` on the web.
+- The remaining ten passages hashed identically.
+
+**The other two — not on the web at all.** Neither appears
+anywhere in the 263-book shelf, by title or author. Both are sideloaded, and
+this is the gap described above: their annotations exist only in the device's
+`My Clippings.txt` and local sidecar, and never reach Amazon's cloud.
+
+### So don't import both sources for the same book
+
+Two consequences follow from the above, and they only bite if you import a book
+from the app *and* from the web:
+
+1. **Passages dedupe on exact text.** The two Harbour Lights passages that differ
+   would import as extra, near-identical passages rather than being recognised
+   as ones already held.
+2. **Sources match on title *and* creator**, and the two disagree about the
+   creator. The app export says `Marsh, Ada` → `Ada Marsh`; the web
+   rail says `Ada Marsh and Ben Ellery`. Those do not match, so a
+   second Harbour Lights source would be created alongside the first. (The Steady
+   Hand is fine — both sides resolve to `Sam Reyes`.)
+
+Pick one source per book: the web export for anything in your Amazon library,
+the app export for a book whose chapter context you want, and `My Clippings.txt`
+for sideloaded titles.
+
 ## Where this is thinner than the app's export
 
 Checked against a real signed-in shelf of 263 books, not assumed. The web
