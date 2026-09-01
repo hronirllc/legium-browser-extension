@@ -5,3 +5,5 @@
 # publish. Committing 3,857 passages from 232 books is a decision to make on
 # purpose rather than by forgetting a gitignore.
 out/
+__pycache__/
+*.pyc
