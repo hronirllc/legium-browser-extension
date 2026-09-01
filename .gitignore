@@ -1,1 +1,7 @@
 .DS_Store
+
+# Your actual highlights. Deliberately untracked: this is the contents of a
+# personal commonplace book, and the repo it sits in is a script anyone could
+# publish. Committing 3,857 passages from 232 books is a decision to make on
+# purpose rather than by forgetting a gitignore.
+out/

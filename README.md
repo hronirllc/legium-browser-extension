@@ -166,3 +166,24 @@ Constants at the top of the script: `fetchDelayMs` (throttle between books),
 `retries`, `downloadDelayMs`. `SELECTORS` holds every page-specific selector in
 one object, so an Amazon redesign is a one-line fix rather than a hunt.
 `window.legiumExport` exposes the internals for poking from the console.
+
+## out/
+
+Generated data, untracked by git — see `.gitignore`. Regenerate at any time:
+
+```sh
+python3 tools/compare.py <legium-archive.json> out/web-export.json --emit-new new.txt
+python3 tools/build_archive.py out/web-export.json out/legium-web.json --only new.txt
+```
+
+| file | what it is |
+|---|---|
+| `web-export.json` | The raw scrape: 263 rail entries, 250 distinct books, 4,840 highlights, 17 notes. The source everything else derives from. |
+| `legium-sample.json` | 3 books, 12 passages. Import this first — it covers a note attached to a highlight, a book with page numbers, and a location-only book. |
+| `legium-web.json` | 232 books, 3,857 passages, 13 notes. Every book the archive did not already hold. |
+| `notebooks/` | The same 232 books as individual notebook-export HTML, for importing through the ordinary path. `INDEX.tsv` maps ASIN to filename. |
+| `notebooks-partial/` | Northern Routes only. Import as **HTML, not JSON** — the archive holds 2 of its 236 passages, and only the HTML path merges into the existing source instead of creating a second one. |
+
+Both archives decode against Legium's own `LegiumArchive` wire format with no
+duplicate or orphaned records, and all 233 HTML files parse with
+`NotebookExportParser` with no unreadable headings.
