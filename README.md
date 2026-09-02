@@ -1,209 +1,290 @@
-# highlights → Legium notebook export
+# highlights → Legium
 
-A userscript for `read.amazon.com/notebook` that downloads every book's
-highlights as the **same per-book HTML the reading app's own "Export notebook"
-produces** — so Legium imports them through `NotebookExportParser` with no new
-parser and no changes to the app.
+Gets every highlight out of `read.amazon.com` and into Legium, in the
+format Legium already reads.
 
-## Install
+Legium imports the per-book HTML that the reading app's own **Export notebook**
+produces. So rather than teach the app a second format, this emits that same
+format from the web notebook page — the preamble is copied verbatim from a real
+export, and every block reproduces a shape `NotebookExportParser` has a fixture
+for.
+
+Two things fall out of that choice, and both are covered below: the web page is
+**thinner** than the app's export in ways worth knowing before you rely on it,
+and the two sources **disagree slightly on wording**, which matters if you ever
+import the same book twice.
+
+---
+
+## Quick start
 
 1. Install [Violentmonkey](https://violentmonkey.github.io/) or
    [Tampermonkey](https://www.tampermonkey.net/).
-2. Add `legium.user.js` to it.
+2. Add `legium.user.js`.
 3. Open <https://read.amazon.com/notebook> and sign in.
-4. A panel appears top-right. Click **Export all books**.
+4. Click **Export all books** in the panel, top right.
 
-You get one `.zip` of `Title - Author.html` files (or individual downloads, if
-you untick the zip box). Feed each file to Legium's notebook import.
+You get a `.zip` of `Title - Author.html` files, one per book, each importable
+into Legium as a notebook export. That is the whole story if you have an empty
+library.
 
-## What it does
+If you already have highlights in Legium, don't import blindly — read
+[Merging with what you already have](#merging-with-what-you-already-have).
 
-Walks the library rail, fetches each book's annotations pane — following the
-pane's own pagination to the end, so long books aren't truncated at the first
-page — and writes the export format: a verbatim copy of the app preamble,
-then `bookTitle` / `authors` / `citation`, then `noteHeading` + `noteText`
-pairs in reading order.
+---
 
-A highlight carrying a note is written as the app writes it: the highlight
-block, then a `Note` block at the same location. That adjacency is what
-Legium's parser folds back into a single passage with a note on it.
+## The pipeline
 
-## How the output was checked
-
-The emitter is exercised off-browser against Legium's *actual* parser, not a
-reimplementation of it:
+For a shelf that overlaps what Legium already holds, the userscript is only the
+first step. The full path:
 
 ```sh
-# generate a notebook covering the awkward cases
-jsc -e 'eval(readFile("legium.user.js")); ...writeNotebook(book)...'
+# 1. Scrape. Either click "Export all books" in the panel, or run the
+#    extractor from the console and save the JSON it builds.
+#    -> out/web-export.json
 
-# parse it with the real thing
-swiftc -o parsecheck \
-  ~/code/legium/Legium/Import/ImportedHighlight.swift \
-  ~/code/legium/Legium/Import/NotebookExportParser.swift main.swift
-./parsecheck generated.html
+# 2. Compare against what Legium already has, and list what is genuinely new.
+python3 tools/compare.py Legium-export.json out/web-export.json \
+        --emit-new new.txt
+
+# 3. Build one archive out of the new books.
+python3 tools/build_archive.py out/web-export.json \
+        out/legium-web.json --only new.txt
 ```
 
-Confirmed round-tripping: `&` in titles, `Surname, Given` author reversal,
-publisher and year off a citation line, page-less location-only highlights,
-roman-numeral pages, notes folded onto their passage, standalone notes left
-alone, and a passage that literally contains `class="noteText"` not opening a
-phantom block.
+Step 3 produces a single `legium.archive` JSON — one import instead of hundreds.
 
-Then repeated on **real records scraped from the live notebook page** — a
-book's export with a genuine note attached to its highlight — which
-the parser read back as one passage carrying that note, an `aqua` highlight
-preserved, and no unparsed headings.
+| tool | what it does |
+|---|---|
+| `legium.user.js` | Scrapes the notebook page, writes per-book notebook-export HTML |
+| `tools/compare.py` | Checks a scrape against a Legium archive; `--emit-new` lists the books Legium lacks |
+| `tools/build_archive.py` | Turns a scrape into one importable `legium.archive` JSON |
+| `tools/test_compare.py` | Regression suite for the comparator |
 
-## Checked against the app's own exports
+### Which format to import
 
-Four books that had been exported from the reading app were re-exported from the
-web and compared record by record, hashing each passage's text on both sides.
+| situation | import |
+|---|---|
+| Book Legium has never seen | The archive JSON — one file, all of them |
+| Book Legium holds **partially** | The **HTML**, so `HighlightImport` merges into the existing source |
+| Book Legium already holds in full | Neither. Keep what you have — see below |
 
-**The Steady Hand — 48 of 48, byte-identical.** Every location matched,
-every passage hashed the same, and the one note came through with the same
-bytes. The only difference is that the app placed the note at location 1114 and
-the web places it at 1113; both fold onto the same passage.
+The archive path matches sources **by UUID and never by title**, and does no
+text-level de-duplication. Hand it a book Legium already holds and you get a
+second source. That restriction is the whole reason `compare.py` exists.
 
-**Harbour Lights — 12 of 13, two passages differing.**
+---
 
-- The blue **bookmark** at location 1727 is absent, as expected.
-- Location 1232 differs by 14 bytes. The app captured
-  `underneath—“ The Harbour Inn:—Open Late.”`; the web gives
-  `“The Harbour Inn:—Open Late.”`. The app export bled in the run of body
-  text preceding the highlight — the web copy is the cleaner of the two.
-- Location 14862 differs by one byte: a footnote marker, spaced as
-  `Islands, 2` in the app export and `Islands,2` on the web.
-- The remaining ten passages hashed identically.
+## What the notebook page actually gives you
 
-**The other two — not on the web at all.** Neither appears
-anywhere in the 263-book shelf, by title or author. Both are sideloaded, and
-this is the gap described above: their annotations exist only in the device's
-`My Clippings.txt` and local sidecar, and never reach Amazon's cloud.
+Findings from a signed-in shelf of 263 rail entries. These are why the selectors
+are what they are.
 
-### So don't import both sources for the same book
-
-Two consequences follow from the above, and they only bite if you import a book
-from the app *and* from the web:
-
-1. **Passages dedupe on exact text.** The two Harbour Lights passages that differ
-   would import as extra, near-identical passages rather than being recognised
-   as ones already held.
-2. **Sources match on title *and* creator**, and the two disagree about the
-   creator. The app export says `Marsh, Ada` → `Ada Marsh`; the web
-   rail says `Ada Marsh and Ben Ellery`. Those do not match, so a
-   second Harbour Lights source would be created alongside the first. (The Steady
-   Hand is fine — both sides resolve to `Sam Reyes`.)
-
-Pick one source per book: the web export for anything in your Amazon library,
-the app export for a book whose chapter context you want, and `My Clippings.txt`
-for sideloaded titles.
-
-## Where this is thinner than the app's export
-
-Checked against a real signed-in shelf of 263 books, not assumed. The web
-notebook does not carry everything the device does; the script stays silent
-rather than guessing, and the parser treats all of these as absent:
-
-- **No chapter headings.** The app's export writes a `sectionHeading` div per
-  chapter. Nothing on the notebook page carries one, so every passage imports
-  with `section == nil`.
-- **No subsections.** No `Subsection > Page N` in the heading either — which
-  means Legium's anthology *piece* detection and its inlined-heading lift have
-  nothing to work with on these files.
-- **No bookmarks.** The web notebook lists highlights and notes only.
-- **No citation, so no publisher and no year.** Confirmed absent from both the
-  fragment and the assembled page — the word "citation" appears nowhere. The
-  `citation` div is therefore never written. (`writeNotebook` still supports
-  one if a caller supplies it, italics and all, since the format allows it.)
-
-If chapter context matters for a particular book, export that one from the
-reading app itself — the two formats are the same, so it drops straight in.
-
-## What the page actually gives you
-
-Findings from the live page, which is why the selectors are what they are:
-
-- The `?asin=` response is a **fragment**: two hidden inputs and then the
+- **`?asin=` returns a fragment**, not a page: two hidden inputs and then the
   annotation rows, with no `#kp-notebook-annotations` wrapper. Parsing falls
   back to the document body so both that and the assembled page work.
-- Those hidden inputs are `kp-notebook-content-limit-state` and
-  `kp-notebook-annotations-next-page-start`, carried **as classes** in the
-  fragment and as ids on the assembled page. Both spellings are matched.
-- **Pagination is load-bearing.** One sampled book returned 97 highlights on
-  its first page and 162 across three. Reading only the first page silently
-  loses a third of a book.
-- A header names **either** a page or a location, never both — but the hidden
+- **The pagination inputs are classes in the fragment and ids on the page**
+  (`kp-notebook-content-limit-state`,
+  `kp-notebook-annotations-next-page-start`). Both spellings are matched.
+- **Pagination is load-bearing.** One book returned 97 highlights on its first
+  page and 162 across three. Reading only the first page loses a third of a book
+  with no error.
+- **A header names either a page or a location, never both** — but the hidden
   `#kp-annotation-location` input holds the true location regardless. On a
-  page-showing book the header reads `Page: 195` while the input says `2119`,
-  so both are recovered and written as `Page 195 · Location 2119`.
-- Locations print with thousands separators (`Location: 1,234`); digits are
-  stripped out before use.
-- Colours come from the CSS class, **not** from the header's label, and the two
+  page-showing book the header reads `Page: 195` while the input says `2119`, so
+  both are recovered and written as `Page 195 · Location 2119`.
+- Locations print with thousands separators (`Location: 1,234`).
+- **The colour comes from the CSS class, not the header's label**, and the two
   disagree: a highlight the header calls `Aqua highlight` carries the class
-  `kp-notebook-highlight-blue` (28 of 29 sampled). The class is the correct
-  source, because the reading app's own export writes `annotation_blue` for that
-  colour too — reading the label instead would give web-exported books a colour
-  string no app-exported book ever uses, and Legium's `highlightColours` would
-  then report two colours for a shelf highlighted in one.
-- Across all 263 books only two class values occur: `yellow` (4,678) and `blue`
-  (162).
-- A row with no note still carries an `#annotationNoteHeader`, hidden via
-  `aok-hidden`. Emptiness of `#note` is what decides, not the header.
+  `kp-notebook-highlight-blue`. The class is correct, because the reading app's
+  own export writes `annotation_blue` too — reading the label would give
+  web-exported books a colour string no app-exported book ever uses. Across the
+  scrape only two values occur: `yellow` (4,678) and `blue` (162).
+- **A row with no note still carries an `#annotationNoteHeader`**, hidden with
+  `aok-hidden`. Emptiness of `#note` decides, not the header's presence.
+- **The rail lists some books twice** — 13 of 263, each pair carrying identical
+  annotations. De-duplicated by ASIN in `readLibrary`.
 
-### One known wrinkle
+### What it does not give you
 
-Authors come from the library rail in natural order (`Ines Varga`), whereas
-the app's export writes `Surname, Given`. Legium reverses on a *single* comma,
-so a rail author with exactly one comma would be flipped. On this shelf that is
-1 book in 263, and Amazon's metadata for it is already scrambled
-(`"Lee Ortiz and Kim;Novak A Park, Jo;Reyes"`), so there is
-nothing to preserve. 244 of 263 have no comma at all and pass through untouched.
+The web notebook is thinner than the device's export. The script stays silent
+rather than guessing, and Legium reads all of these as absent:
+
+- **No chapter headings.** The app writes a `sectionHeading` div per chapter,
+  from the book's table of contents. Nothing on the notebook page carries one,
+  so every passage imports with `section == nil`.
+- **No subsections**, so no `Subsection > Page N` — which means Legium's
+  anthology *piece* detection and its inlined-heading lift have nothing to work
+  with on these files.
+- **No bookmarks.** Highlights and notes only.
+- **No citation, so no publisher and no year.** Confirmed absent from both the
+  fragment and the assembled page.
+- **Nothing sideloaded.** A book you put on the device over USB is not in your
+  Amazon library, so its annotations never reach the cloud. They live only in
+  the device's `My Clippings.txt`.
+
+---
+
+## Why the app's export can't be automated
+
+The app builds its export client-side, from the downloaded book's table of
+contents plus the local annotation sidecar. That is where the chapter data comes
+from, and there is no way to reach it in bulk:
+
+- **The Cloud Reader is a dead end.** It renders the book into a single
+  `<canvas>` with zero DOM text, behind obfuscated internals
+  (`GlyphRenderer`, `RendererCanvasInsertion`).
+- **There is no API.** Readwise's own documentation says so plainly, which is
+  why their sync is a browser extension reading the same notebook page
+  this script reads. Bookcision is a bookmarklet on that page. Every tool in the
+  ecosystem uses this one source, and none of them recover chapters either.
+  StoryGraph doesn't import highlights at all.
+- The only faithful route is UI-automating the desktop reading app, one book at a
+  time, with every book downloaded locally. Feasible; unpleasant; brittle.
+
+So: web export for everything in your Amazon library, the app's export by hand
+for the few books whose structure carries meaning, `My Clippings.txt` for
+sideloaded titles.
+
+---
+
+## Merging with what you already have
+
+Comparing a scrape against a real Legium archive of 26 sources / 451 entries:
+**9 books in both, 419 archive passages there, 366 identical, 51 drifted, 2
+absent from the web.** Counts matched exactly on 7 of the 9. Of the other two,
+The Steady Hand's extra web record is a note, which folds onto its
+highlight and so is not a real difference; Northern Routes is the partial import
+described below. No book lost passages to the web.
+
+### The two sources disagree on wording
+
+Drift is systematic, not random. Of 51 drifted passages, **35 are pure spacing**:
+the app export inserts a space before certain glyphs.
+
+```
+app: "Brand of Acme ™."          web: "Brand of Acme™."
+app: "6: 30 in the evening"      web: "6:30 in the evening"
+app: "‘ quoted’ were all"        web: "‘quoted’ were all"
+```
+
+The rest are edge differences — in Harbour Lights the app bled `underneath—“ ` in
+ahead of the highlight, where the web copy is the cleaner of the two.
+
+**So don't import both sources for the same book.** Legium dedupes passages on a
+folded key (`HighlightImport.matchKey`) that forgives case, diacritics and
+whitespace *runs* — but not an inserted space. Those 51 would land as
+near-duplicates.
+
+There is a second trap. Sources match on title **and creator**, and the two
+sources disagree about the creator: the app export says `Marsh, Ada` →
+`Ada Marsh`, while the rail says `Ada Marsh and Ben Ellery`.
+Those don't match, so you get a second source for the same book. Any book where
+Amazon lists a co-author will split this way.
+
+### Prefer the archive — except when it's partial
+
+"Prefer what Legium already has" is right only where Legium's copy is complete.
+In practice one book was a partial import: **Northern Routes, 2 passages in the
+archive against 236 on the web.** `compare.py` flags books where the web holds
+substantially more. Import those as HTML so `HighlightImport` merges them in.
+
+### Books with no web counterpart
+
+Ten archive sources had none: poems and OCR entries, plus five that look
+sideloaded. Nothing to merge — they're already yours, and the web will never
+have them.
+
+---
+
+## The format contract
+
+What the emitter writes, and what `NotebookExportParser` reads back:
+
+```html
+<div class="bookTitle">    …title… </div>
+<div class="authors">      …author… </div>
+<div class="noteHeading">
+    Highlight(<span class="annotation_yellow">yellow</span>)
+ - Page 49 · Location 1114
+</div>
+<div class="noteText">     …the passage… </div>
+```
+
+- A highlight carrying a note is written as the app writes it: the highlight
+  block, then a `Note` block **at the same location**. That adjacency is what
+  Legium folds back into one passage with a note on it.
+- Text is escaped including quotes, so a passage that literally contains
+  `class="noteText"` cannot open a block of its own.
+- The `citation` div is omitted entirely when there is none, which is always
+  from the web.
+
+### Origin
+
+The archives stamp entries `import.notebook-web`, not `import.notebook-html`, so
+web-scraped passages stay distinguishable. Legium needs no new case: `originRaw`
+is plain text and "was this imported" is answered by the `import.` prefix — the
+unknown-lane case `EntryOrigin` is explicitly designed for. The name follows that
+enum's rule of naming a **format** rather than a product.
+
+Importing the HTML files through Legium's own notebook import stamps them
+`import.notebook-html` instead, because that path passes the case in itself.
+
+### Re-importing is safe
+
+Archive UUIDs derive from the ASIN, so regenerating produces identical ids and a
+second import updates nothing. Timestamps are deterministic on purpose: the
+import skips a record whose `updatedAt` isn't newer, which means a re-import
+can't silently overwrite edits you've made by hand. The cost is that changing
+something in the builder won't reach entries you already imported — delete those
+first if you need the change to land.
+
+---
+
+## How this was checked
+
+Nothing here was validated against a reimplementation of Legium.
+
+- **The emitter runs under `jsc`, and its output goes through the real
+  `NotebookExportParser`**, compiled with `swiftc` against
+  `ImportedHighlight.swift`. Covers entity handling, author reversal, publisher
+  and year off a citation line, location-only highlights, roman-numeral pages,
+  note folding, and the `class="noteText"` case.
+- **The archives decode with Legium's own `LegiumArchive` wire format** — its
+  structs and custom decoders, compiled directly. This is what caught the
+  duplicated-ASIN bug: 13 duplicate source UUIDs and 330 duplicate entry UUIDs,
+  invisible from the outside.
+- **The two output paths are cross-checked against each other.** All 232 books
+  hash identically through the emitter → parser as through the Python builder.
+- **Against real app exports**: The Steady Hand matched 48 of 48 byte for
+  byte, including its note. Harbour Lights matched 10 of 12, the differences being
+  the two described above, with its bookmark absent as expected.
+- `tools/test_compare.py` covers the comparator: folding, anthology roll-up,
+  note pairing, drift detection, and books present on one side only.
+
+```sh
+python3 tools/test_compare.py
+```
+
+---
 
 ## Config
 
-Constants at the top of the script: `fetchDelayMs` (throttle between books),
+Constants at the top of the userscript: `fetchDelayMs` (throttle between books),
 `retries`, `downloadDelayMs`. `SELECTORS` holds every page-specific selector in
 one object, so an Amazon redesign is a one-line fix rather than a hunt.
 `window.legiumExport` exposes the internals for poking from the console.
 
 ## out/
 
-Generated data, untracked by git — see `.gitignore`. Regenerate at any time:
-
-```sh
-python3 tools/compare.py <legium-archive.json> out/web-export.json --emit-new new.txt
-python3 tools/build_archive.py out/web-export.json out/legium-web.json --only new.txt
-```
+Generated data, untracked by git — it's the contents of a personal commonplace
+book, and this repo is a script anyone could publish. Regenerate with the
+pipeline above.
 
 | file | what it is |
 |---|---|
-| `web-export.json` | The raw scrape: 263 rail entries, 250 distinct books, 4,840 highlights, 17 notes. The source everything else derives from. |
-| `legium-sample.json` | 3 books, 12 passages. Import this first — it covers a note attached to a highlight, a book with page numbers, and a location-only book. |
-| `legium-web.json` | 232 books, 3,857 passages, 13 notes. Every book the archive did not already hold. |
-| `notebooks/` | The same 232 books as individual notebook-export HTML, for importing through the ordinary path. `INDEX.tsv` maps ASIN to filename. |
-| `notebooks-partial/` | Northern Routes only. Import as **HTML, not JSON** — the archive holds 2 of its 236 passages, and only the HTML path merges into the existing source instead of creating a second one. |
-
-Both archives decode against Legium's own `LegiumArchive` wire format with no
-duplicate or orphaned records, and all 233 HTML files parse with
-`NotebookExportParser` with no unreadable headings.
-
-### Origin
-
-Entries are stamped `import.notebook-web`, not `import.notebook-html`. Legium
-has no case for it and needs none: `originRaw` is plain text and "was this
-imported" is answered by the `import.` prefix — the unknown-lane case
-`EntryOrigin` is deliberately designed for. The name follows that enum's rule of
-naming a **format** rather than a product: these came off the notebook *web
-page*, which carries neither chapters nor bookmarks, so it is genuinely a
-different source from the export an e-reader writes.
-
-Note that this only applies to the JSON archives. Importing the HTML files
-through Legium's own notebook import stamps them `import.notebook-html`, because
-that path passes the case in itself.
-
-**If you already imported an earlier build of these files**, the new origin will
-not reach those entries: the archive import skips a record whose `updatedAt` is
-not newer than the copy already held, and timestamps here are deterministic so
-that re-running is never destructive. Delete the affected entries first, or
-accept the old stamp on them.
+| `web-export.json` | The raw scrape: 263 rail entries, 250 distinct books, 4,840 highlights, 17 notes |
+| `legium-sample.json` | 3 books, 12 passages. Import first — covers a note on a highlight, a paged book, a location-only book |
+| `legium-web.json` | 232 books, 3,857 passages, 13 notes. Every book the archive did not hold |
+| `notebooks/` | The same 232 books as individual HTML; `INDEX.tsv` maps ASIN to filename |
+| `notebooks-partial/` | Northern Routes only — import as **HTML, not JSON** |
