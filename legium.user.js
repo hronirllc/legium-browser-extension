@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Highlights → Legium notebook export
+// @name         highlights → Legium
 // @namespace    dev.hronir.legium
-// @version      1.0.0
-// @description  Exports every book's highlights from the notebook page as the same per-book HTML that the reading app's own "Export notebook" produces, so Legium's NotebookExportParser can read them unchanged.
+// @version      2.0.0
+// @description  Exports every highlight and note from your notebook page (read.amazon.com/notebook) as one file that Legium imports.
 // @author       Hronir LLC
 // @match        https://read.amazon.com/notebook*
 // @match        https://read.amazon.co.uk/notebook*
@@ -24,7 +24,16 @@
 //
 // What this produces
 // -----------------
-// One HTML file per book, byte-shaped like the reading app's own notebook export:
+// By default, one `legium.archive` JSON holding every book: what Legium's
+// Settings → Archive → Import archive… reads, so a whole shelf is one import.
+// It is built the way `tools/build_archive.py` builds one; see `writeArchive`
+// for the two places it departs from that, both so that exporting again later
+// is safe.
+//
+// Or plain JSON tied to no app (`writePlain`): each book's records as read.
+//
+// Or a .zip of one HTML file per book, byte-shaped like the reading
+// app's own notebook export:
 // a fixed preamble, then `bookTitle` / `authors` / `citation` divs, then a run of
 // `sectionHeading` / `noteHeading` / `noteText` divs in reading order.
 //
@@ -433,9 +442,11 @@
         // publisher, no year and no citation line anywhere, so that div is simply
         // never written and the parser reads both fields as absent.
         return {
+            asin: book.asin,
             title: book.title,
             author: book.author.replace(/^By:\s*/i, ''),
             citation: '',
+            pages: guard,
             records,
         };
     }
@@ -508,6 +519,233 @@
         return parts.join('');
     }
 
+    /**
+     * Books as plain JSON, tied to no app: what the notebook page said, as the
+     * script read it, and nothing Legium-specific. The same shape as
+     * `out/web-export.json`, so `tools/compare.py` and
+     * `tools/build_archive.py` read it. `shelf` counts the library rail, books
+     * with no highlights included; `books` holds only those with some.
+     */
+    function writePlain(books, shelf, now = new Date()) {
+        return {
+            format: 'notebook-highlights',
+            version: 1,
+            scrapedAt: now.toISOString(),
+            shelf,
+            books: books.map((book) => ({
+                asin: book.asin,
+                title: book.title,
+                author: book.author,
+                pages: book.pages,
+                records: book.records.map((record) => ({
+                    kind: record.kind,
+                    text: record.text,
+                    colour: record.colour,
+                    page: record.page,
+                    location: record.location,
+                })),
+            })),
+        };
+    }
+
+    // --------------------------------------------------------------- archive
+
+    // The same namespace as `tools/build_archive.py`, so a source made by either
+    // from the same ASIN has the same uuid.
+    const ARCHIVE_NAMESPACE = '6f9e5b3a-2c41-4d8e-9a17-5b0c8e2d4f36';
+    const ARCHIVE_ORIGIN = 'import.notebook-web';
+    /** HighlightImport.noteAnchorSpan */
+    const NOTE_ANCHOR_SPAN = 10;
+    /**
+     * Every passage's `updatedAt`. Legium's archive import replaces a passage it
+     * already holds only when the incoming `updatedAt` is strictly newer, and
+     * replacing resets its note, favourite and tags to the file's. A fixed date
+     * that no edit can be older than means exporting again adds what is new and
+     * leaves everything the reader has done in Legium alone.
+     */
+    const ARCHIVE_UPDATED_AT = '1970-01-01T00:00:00Z';
+
+    function utf8(text) {
+        if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(text);
+        const binary = unescape(encodeURIComponent(text));
+        return Uint8Array.from(binary, (c) => c.charCodeAt(0));
+    }
+
+    /**
+     * SHA-1 of some bytes. Written out rather than taken from `crypto.subtle`,
+     * which is asynchronous and missing outside a browser, so the archive can be
+     * built and checked under `jsc` as the notebook HTML is.
+     */
+    function sha1(bytes) {
+        const length = bytes.length;
+        const words = new Uint32Array((((length + 8) >> 6) + 1) * 16);
+        for (let i = 0; i < length; i += 1) words[i >> 2] |= bytes[i] << (24 - (i % 4) * 8);
+        words[length >> 2] |= 0x80 << (24 - (length % 4) * 8);
+        words[words.length - 1] = length * 8;
+
+        const h = [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0];
+        const w = new Uint32Array(80);
+        for (let block = 0; block < words.length; block += 16) {
+            for (let t = 0; t < 16; t += 1) w[t] = words[block + t];
+            for (let t = 16; t < 80; t += 1) {
+                const x = w[t - 3] ^ w[t - 8] ^ w[t - 14] ^ w[t - 16];
+                w[t] = (x << 1) | (x >>> 31);
+            }
+            let [a, b, c, d, e] = h;
+            for (let t = 0; t < 80; t += 1) {
+                const f = t < 20 ? (b & c) | (~b & d)
+                    : t < 40 ? b ^ c ^ d
+                    : t < 60 ? (b & c) | (b & d) | (c & d)
+                    : b ^ c ^ d;
+                const k = t < 20 ? 0x5a827999 : t < 40 ? 0x6ed9eba1 : t < 60 ? 0x8f1bbcdc : 0xca62c1d6;
+                const next = (((a << 5) | (a >>> 27)) + f + e + k + w[t]) >>> 0;
+                e = d; d = c; c = ((b << 30) | (b >>> 2)) >>> 0; b = a; a = next;
+            }
+            h[0] = (h[0] + a) >>> 0; h[1] = (h[1] + b) >>> 0; h[2] = (h[2] + c) >>> 0;
+            h[3] = (h[3] + d) >>> 0; h[4] = (h[4] + e) >>> 0;
+        }
+        const out = new Uint8Array(20);
+        h.forEach((word, i) => {
+            out[i * 4] = word >>> 24; out[i * 4 + 1] = (word >>> 16) & 0xff;
+            out[i * 4 + 2] = (word >>> 8) & 0xff; out[i * 4 + 3] = word & 0xff;
+        });
+        return out;
+    }
+
+    const hex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
+    /** Python's `uuid.uuid5`, upper-cased as Legium writes uuids. */
+    function uuid5(namespace, name) {
+        const space = Uint8Array.from(namespace.replace(/-/g, '').match(/../g), (pair) => parseInt(pair, 16));
+        const label = utf8(name);
+        const input = new Uint8Array(space.length + label.length);
+        input.set(space);
+        input.set(label, space.length);
+        const digest = sha1(input).slice(0, 16);
+        digest[6] = (digest[6] & 0x0f) | 0x50;
+        digest[8] = (digest[8] & 0x3f) | 0x80;
+        const h = hex(digest);
+        return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`.toUpperCase();
+    }
+
+    /** `build_archive.py`'s `det`. */
+    const det = (...parts) => uuid5(ARCHIVE_NAMESPACE, parts.join('\x1f'));
+
+    /** HighlightImport.matchKey: case, diacritics and runs of whitespace forgiven. */
+    function matchKey(text, note) {
+        const fold = (value) =>
+            (value || '').normalize('NFD').replace(/\p{Mn}/gu, '').toLowerCase().split(/\s+/).filter(Boolean).join(' ');
+        return `${fold(text)}\x1f${fold(note)}`;
+    }
+
+    /** ImportedBook.authorDisplayName: a single comma means "Surname, Given". */
+    function authorDisplay(name) {
+        const trimmed = (name || '').trim();
+        const parts = trimmed.split(',').map((part) => part.trim());
+        return parts.length === 2 && parts[0] && parts[1] ? `${parts[1]} ${parts[0]}` : trimmed;
+    }
+
+    /** HighlightImport.locator: a page when the book has one, else a location. */
+    function locator(page, location) {
+        if (page) return `p. ${page}`;
+        if (location) return `loc. ${location}`;
+        return null;
+    }
+
+    /**
+     * Records as Legium would file them: a note folded onto the highlight just
+     * above it when it sits within the span the parser allows, otherwise kept as
+     * a note with no passage.
+     */
+    function passages(records) {
+        const out = [];
+        const number = (value) => (/^\d+$/.test(value || '') ? parseInt(value, 10) : null);
+        records.forEach((record) => {
+            if (record.kind === 'Highlight') {
+                out.push({ text: record.text, note: '', page: record.page || '', location: record.location || '' });
+                return;
+            }
+            const here = number(record.location);
+            const last = out[out.length - 1];
+            const anchor = last ? number(last.location) : null;
+            if (last && last.text && !last.note && here !== null && anchor !== null &&
+                anchor <= here && here <= anchor + NOTE_ANCHOR_SPAN) {
+                last.note = record.text;
+            } else {
+                out.push({ text: '', note: record.text, page: record.page || '', location: record.location || '' });
+            }
+        });
+        return out.filter((passage) => passage.text || passage.note);
+    }
+
+    /**
+     * Books as one `legium.archive` (version 1, the single JSON file).
+     *
+     * Built as `tools/build_archive.py` builds one, with two differences, both so
+     * that a reader can export again after reading more and import the new file
+     * over the old:
+     *
+     * - A passage's uuid comes from its book and its text, not its position.
+     *   Matching is by uuid alone, so a position-derived id shifts every later
+     *   passage when a highlight is added mid-book, and they all arrive twice.
+     * - `updatedAt` is `ARCHIVE_UPDATED_AT`, never the export's time.
+     *
+     * So don't import this over books that `build_archive.py` brought in: those
+     * passages carry position-derived uuids and would arrive a second time.
+     */
+    function writeArchive(books, now = new Date()) {
+        const stamp = now.toISOString().replace(/\.\d+Z$/, 'Z'); // Legium reads no fractions
+        const sources = [];
+        const contributors = [];
+        const entries = [];
+        const people = new Map();
+        const seenAsins = new Set();
+
+        books.forEach((book) => {
+            if (seenAsins.has(book.asin)) return;
+            seenAsins.add(book.asin);
+            const found = passages(book.records);
+            if (!found.length) return;
+
+            const sourceUUID = det('source', book.asin);
+            const creator = authorDisplay(book.author);
+            const contributions = [];
+            if (creator) {
+                if (!people.has(creator)) {
+                    people.set(creator, det('contributor', creator));
+                    // sortName left blank so Legium derives its own.
+                    contributors.push({ uuid: people.get(creator), name: creator, sortName: '', createdAt: stamp });
+                }
+                contributions.push({
+                    contributorUUID: people.get(creator), role: 'author', position: 0, marcCode: 'aut',
+                });
+            }
+            sources.push({
+                uuid: sourceUUID, title: book.title, kind: 'book',
+                createdAt: stamp, tagUUIDs: [], contributions,
+            });
+
+            const held = new Set();
+            found.forEach((passage) => {
+                const key = matchKey(passage.text, passage.note);
+                if (held.has(key)) return;
+                held.add(key);
+                entries.push({
+                    uuid: det('entry', book.asin, hex(sha1(utf8(`${passage.text}\x1f${passage.note}`)))),
+                    text: passage.text, note: passage.note,
+                    locator: locator(passage.page, passage.location),
+                    isFavorite: false, createdAt: stamp, updatedAt: ARCHIVE_UPDATED_AT,
+                    sourceUUID, tagUUIDs: [], attachments: [], origin: ARCHIVE_ORIGIN,
+                });
+            });
+        });
+
+        return {
+            format: 'legium.archive', version: 1, exportedAt: stamp,
+            sources, contributors, tags: [], entries,
+        };
+    }
+
     // ------------------------------------------------------------ delivering
 
     function downloadBlob(blob, filename) {
@@ -535,26 +773,43 @@
                     box-shadow: 0 4px 16px rgba(0,0,0,.18);
                     font: 13px/1.45 "Amazon Ember", Arial, sans-serif;
                 }
-                #legium-export-panel h4 { margin: 0 0 8px; font-size: 14px; }
-                #legium-export-panel button {
-                    width: 100%; padding: 8px 10px; margin-top: 8px; cursor: pointer;
+                #legium-export-panel h4 { margin: 0 0 8px; padding-right: 28px; font-size: 14px; }
+                #legium-export-run {
+                    width: 100%; padding: 8px 10px; margin-top: 10px; cursor: pointer;
                     border-radius: 8px; border: 1px solid #adb1b8; background: #f7fafa;
                     font: inherit; font-weight: 600;
                 }
-                #legium-export-panel button:disabled { opacity: .55; cursor: default; }
-                #legium-export-panel label { display: block; margin-top: 8px; font-size: 12px; }
+                #legium-export-run:disabled { opacity: .55; cursor: default; }
+                #legium-export-close {
+                    position: absolute; top: 8px; right: 8px; width: 28px; height: 28px;
+                    border: 0; background: none; cursor: pointer; font-size: 18px; color: #555;
+                }
+                #legium-export-panel fieldset { border: 0; margin: 8px 0 0; padding: 0; }
+                #legium-export-panel legend { padding: 0; font-size: 12px; font-weight: 600; }
+                #legium-export-panel label { display: block; margin-top: 4px; font-size: 12px; }
+                #legium-export-done { margin-top: 10px; font-weight: 600; }
                 #legium-export-log {
                     margin-top: 10px; max-height: 190px; overflow-y: auto;
                     font-size: 11.5px; color: #444; white-space: pre-wrap;
                     border-top: 1px solid #eee; padding-top: 8px;
                 }
+                #legium-export-log:empty { display: none; }
                 #legium-export-log .bad { color: #b12704; }
             </style>
             <h4>Export highlights for Legium</h4>
-            <div id="legium-export-count">Reading your library…</div>
-            <label><input type="checkbox" id="legium-export-zip" checked> Bundle into one .zip</label>
-            <label><input type="checkbox" id="legium-export-skip" checked> Skip books with no highlights</label>
-            <button id="legium-export-run">Export all books</button>
+            <button id="legium-export-close" type="button" aria-label="Close">×</button>
+            <div id="legium-export-count" role="status">Reading your library…</div>
+            <fieldset>
+                <legend>Save as</legend>
+                <label><input type="radio" name="legium-export-as" value="archive" checked>
+                    One file for Legium (.json)</label>
+                <label><input type="radio" name="legium-export-as" value="plain">
+                    Plain JSON, for any app or script</label>
+                <label><input type="radio" name="legium-export-as" value="notebooks">
+                    notebook files, one per book (.zip)</label>
+            </fieldset>
+            <button id="legium-export-run" type="button">Export all books</button>
+            <div id="legium-export-done" role="status"></div>
             <div id="legium-export-log"></div>
         `;
         document.body.appendChild(panel);
@@ -573,9 +828,12 @@
 
     async function run(panel, log) {
         const button = panel.querySelector('#legium-export-run');
-        const asZip = panel.querySelector('#legium-export-zip').checked;
-        const skipEmpty = panel.querySelector('#legium-export-skip').checked;
+        const count = panel.querySelector('#legium-export-count');
+        const done = panel.querySelector('#legium-export-done');
+        const mode = panel.querySelector('input[name="legium-export-as"]:checked').value;
+        const asNotebooks = mode === 'notebooks';
         button.disabled = true;
+        done.textContent = '';
 
         const library = readLibrary();
         if (!library.length) {
@@ -584,9 +842,10 @@
             return;
         }
 
-        const zip = asZip && typeof JSZip !== 'undefined' ? new JSZip() : null;
-        if (asZip && !zip) log('JSZip unavailable — falling back to single files.', true);
+        const zip = asNotebooks && typeof JSZip !== 'undefined' ? new JSZip() : null;
+        if (asNotebooks && !zip) log('JSZip unavailable — falling back to single files.', true);
 
+        const books = [];
         const used = new Set();
         let exported = 0;
         let highlights = 0;
@@ -595,6 +854,7 @@
         for (let index = 0; index < library.length; index += 1) {
             const entry = library[index];
             const label = entry.title || entry.asin;
+            count.textContent = `Exporting book ${index + 1} of ${library.length}…`;
             log(`${index + 1}/${library.length}  ${label}`);
 
             let book;
@@ -607,8 +867,18 @@
                 continue;
             }
 
-            if (skipEmpty && !book.records.length) {
+            if (!book.records.length) {
                 log('   no highlights, skipped');
+                await sleep(CONFIG.fetchDelayMs);
+                continue;
+            }
+
+            exported += 1;
+            highlights += book.records.length;
+            log(`   ${book.records.length} annotations`);
+
+            if (!asNotebooks) {
+                books.push(book);
                 await sleep(CONFIG.fetchDelayMs);
                 continue;
             }
@@ -620,10 +890,6 @@
             used.add(filename);
 
             const html = writeNotebook(book);
-            exported += 1;
-            highlights += book.records.length;
-            log(`   ${book.records.length} annotations`);
-
             if (zip) {
                 zip.file(filename, html);
             } else {
@@ -634,10 +900,33 @@
             await sleep(CONFIG.fetchDelayMs);
         }
 
-        if (zip && exported) {
-            log('Building the zip…');
-            const blob = await zip.generateAsync({ type: 'blob' });
-            downloadBlob(blob, `notebooks-${new Date().toISOString().slice(0, 10)}.zip`);
+        const day = new Date().toISOString().slice(0, 10);
+        const failures = failed ? ` ${failed} book(s) failed; see the list below, and export again to retry them.` : '';
+        count.textContent = `${library.length} book(s) on your shelf.`;
+
+        if (!exported) {
+            done.textContent = `No highlights found.${failures}`;
+        } else if (mode === 'archive') {
+            const archive = writeArchive(books);
+            const filename = `highlights-legium-${day}.json`;
+            downloadBlob(new Blob([JSON.stringify(archive, null, 2)], { type: 'application/json' }), filename);
+            done.textContent =
+                `Saved ${filename}: ${archive.sources.length} book(s), ${archive.entries.length} passages. ` +
+                `In Legium, open Settings → Archive → Import archive… and choose this file.${failures}`;
+        } else if (mode === 'plain') {
+            const filename = `highlights-${day}.json`;
+            const data = writePlain(books, library.length);
+            downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), filename);
+            done.textContent = `Saved ${filename}: ${exported} book(s), ${highlights} annotations.${failures}`;
+        } else {
+            if (zip) {
+                log('Building the zip…');
+                const blob = await zip.generateAsync({ type: 'blob' });
+                downloadBlob(blob, `notebooks-${day}.zip`);
+            }
+            done.textContent =
+                `Saved ${exported} book(s), ${highlights} annotations. In Legium, import each file with ` +
+                `Settings → Import → Import highlights….${failures}`;
         }
 
         log(`Done. ${exported} book(s), ${highlights} annotations${failed ? `, ${failed} failed` : ''}.`);
@@ -662,9 +951,17 @@
         setTimeout(() => clearInterval(settle), 20000);
 
         panel.querySelector('#legium-export-run').addEventListener('click', () => {
-            run(panel, log).catch((error) => log(`Stopped: ${error}`, true));
+            clearInterval(settle);
+            run(panel, log).catch((error) => {
+                log(`Stopped: ${error}`, true);
+                panel.querySelector('#legium-export-run').disabled = false;
+            });
         });
-
+        // Hides the panel until the page is reloaded. An export already running
+        // carries on and still saves its file.
+        panel.querySelector('#legium-export-close').addEventListener('click', () => {
+            panel.hidden = true;
+        });
     }
 
     // Exposed for two reasons: checking a selector from the console when Amazon
@@ -673,6 +970,7 @@
     globalThis.legiumExport = {
         readLibrary, fetchBook, fetchDocument, readAnnotations,
         readPlace, readColour, annotationsRoot, writeNotebook, writeRecord, safeFilename, esc,
+        writeArchive, writePlain, passages, matchKey, uuid5, sha1,
         SELECTORS, CONFIG,
     };
 
