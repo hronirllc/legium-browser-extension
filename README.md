@@ -103,7 +103,9 @@ empty for a book without page numbers; `location` is digits only.
 
 # How it works
 
-The rest is for whoever maintains this.
+The rest is for whoever maintains this. The findings come from a real shelf;
+the book titles, authors and quoted passages used to illustrate them are
+invented.
 
 Legium imports the per-book HTML that the reading app's own **Export notebook**
 produces, and the single-file `legium.archive` JSON its own export used to
