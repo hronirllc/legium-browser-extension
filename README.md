@@ -1,35 +1,121 @@
 # highlights → Legium
 
-Gets every highlight out of `read.amazon.com` and into Legium, in the
-format Legium already reads.
-
-Legium imports the per-book HTML that the reading app's own **Export notebook**
-produces. So rather than teach the app a second format, this emits that same
-format from the web notebook page — the preamble is copied verbatim from a real
-export, and every block reproduces a shape `NotebookExportParser` has a fixture
-for.
-
-Two things fall out of that choice, and both are covered below: the web page is
-**thinner** than the app's export in ways worth knowing before you rely on it,
-and the two sources **disagree slightly on wording**, which matters if you ever
-import the same book twice.
+Saves every highlight and note in your library as one file that Legium
+imports. It reads Amazon's notebook page, <https://read.amazon.com/notebook>,
+in your own browser, while you are signed in. Nothing is sent anywhere else.
 
 ---
 
-## Quick start
+## Install
 
-1. Install [Violentmonkey](https://violentmonkey.github.io/) or
-   [Tampermonkey](https://www.tampermonkey.net/).
-2. Add `legium.user.js`.
-3. Open <https://read.amazon.com/notebook> and sign in.
-4. Click **Export all books** in the panel, top right.
+It is a userscript: a small script that a browser extension runs on one web
+page. Use Firefox, Chrome or Edge on a computer.
 
-You get a `.zip` of `Title - Author.html` files, one per book, each importable
-into Legium as a notebook export. That is the whole story if you have an empty
-library.
+1. Install **Tampermonkey**:
+   [for Firefox](https://addons.mozilla.org/firefox/addon/tampermonkey/),
+   [for Chrome](https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo),
+   [for Edge](https://microsoftedge.microsoft.com/addons/detail/tampermonkey/iikmkjmpaadaobahmlepeloendndfphd).
+2. **Chrome and Edge only:** open `chrome://extensions` (`edge://extensions`),
+   press **Details** under Tampermonkey, and turn on **Allow User Scripts**.
+   Without it the script installs but never runs.
+3. Open [legium.user.js](legium.user.js?raw=true).
+   Tampermonkey shows the script's install page; press **Install**. (If you see
+   the code instead, press **Raw**.)
 
-If you already have highlights in Legium, don't import blindly — read
+Tampermonkey checks the same address for new versions and updates the script
+itself.
+
+## Export
+
+1. Open <https://read.amazon.com/notebook> and sign in. Your books are listed on
+   the left.
+2. A panel, **Export highlights for Legium**, is in the top right corner. Leave
+   **One file for Legium (.json)** chosen and press **Export all books**.
+3. Wait. It reads one book at a time; a few hundred books take several
+   minutes. Keep the tab open.
+4. Your browser saves `highlights-legium-<date>.json`.
+
+## Import into Legium
+
+1. Put the file where your iPhone or iPad can reach it: iCloud Drive, AirDrop,
+   or email it to yourself and save the attachment to Files.
+2. In Legium, open **Settings → Archive → Import archive…** and choose the file.
+
+Each book comes in with its title, author, and each highlight with its page or
+location. A note you wrote on a highlight is attached to that passage.
+
+### Exporting again later
+
+Do the same again after you have read more. Importing the newer file adds the
+passages Legium doesn't have, and leaves the ones it has as they are, including
+any you have edited, tagged or starred. Two cases bring in a second copy:
+
+- a note added later to a highlight you had already imported (the passage
+  arrives again, with the note), and
+- a passage you deleted in Legium, once it has gone from the Trash.
+
+### If Legium already has some of these books
+
+The `.json` file matches books by an id made from the book, not by
+title, so a book you imported earlier from the reading app's own **Export
+notebook** would arrive a second time. For those books, choose **notebook
+files, one per book (.zip)** instead, unzip it, and import each book's `.html`
+with **Settings → Import → Import highlights…**. That import merges into the
+book you have and skips passages already there. See
 [Merging with what you already have](#merging-with-what-you-already-have).
+
+## What it can't get
+
+Amazon's notebook page has no chapter names, no bookmarks, no publisher or year,
+and nothing from books you put on a device over USB. See
+[What it does not give you](#what-it-does-not-give-you).
+
+## The three ways to save
+
+| choice in the panel | file | for |
+|---|---|---|
+| One file for Legium (.json) | `highlights-legium-<date>.json` | Legium's **Import archive…** |
+| Plain JSON, for any app or script | `highlights-<date>.json` | Anything else; also what `tools/` reads |
+| notebook files, one per book (.zip) | `notebooks-<date>.zip` | Legium's **Import highlights…**, one book at a time; any tool that reads the reading app's notebook export |
+
+The plain JSON has no Legium in it. It is the notebook page as read:
+
+```json
+{
+  "format": "notebook-highlights", "version": 1,
+  "scrapedAt": "2026-10-25T19:02:11.481Z",
+  "shelf": 263,
+  "books": [{
+    "asin": "B00ABC1234", "title": "…", "author": "…", "pages": 1,
+    "records": [
+      {"kind": "Highlight", "text": "…", "colour": "yellow", "page": "49", "location": "1114"},
+      {"kind": "Note", "text": "…", "colour": "", "page": "49", "location": "1114"}
+    ]
+  }]
+}
+```
+
+`shelf` counts every book in the library, `books` only those with highlights.
+A note follows the highlight it was written on, at the same location. `page` is
+empty for a book without page numbers; `location` is digits only.
+
+---
+
+# How it works
+
+The rest is for whoever maintains this.
+
+Legium imports the per-book HTML that the reading app's own **Export notebook**
+produces, and the single-file `legium.archive` JSON its own export used to
+write. The script can emit both. The notebook HTML reproduces the app's format
+exactly — the preamble is copied verbatim from a real export, and every block
+reproduces a shape `NotebookExportParser` has a fixture for. The archive is
+built the way `tools/build_archive.py` builds one, with two differences
+described under [The browser's archive](#the-browsers-archive).
+
+Two things matter before relying on either: the web page is **thinner** than
+the app's export, and the two sources **disagree slightly on wording**, which
+matters if you ever import the same book twice.
 
 ---
 
@@ -39,8 +125,7 @@ For a shelf that overlaps what Legium already holds, the userscript is only the
 first step. The full path:
 
 ```sh
-# 1. Scrape. Either click "Export all books" in the panel, or run the
-#    extractor from the console and save the JSON it builds.
+# 1. Scrape. Choose "Plain JSON" in the panel and click "Export all books".
 #    -> out/web-export.json
 
 # 2. Compare against what Legium already has, and list what is genuinely new.
@@ -56,10 +141,11 @@ Step 3 produces a single `legium.archive` JSON — one import instead of hundred
 
 | tool | what it does |
 |---|---|
-| `legium.user.js` | Scrapes the notebook page, writes per-book notebook-export HTML |
+| `legium.user.js` | Scrapes the notebook page; writes a `legium.archive`, plain JSON, or per-book notebook-export HTML |
 | `tools/compare.py` | Checks a scrape against a Legium archive; `--emit-new` lists the books Legium lacks |
 | `tools/build_archive.py` | Turns a scrape into one importable `legium.archive` JSON |
 | `tools/test_compare.py` | Regression suite for the comparator |
+| `tools/test_archive.py` | Runs the userscript's archive writer under `jsc` and checks it against `build_archive.py` |
 
 ### Which format to import
 
@@ -239,6 +325,30 @@ can't silently overwrite edits you've made by hand. The cost is that changing
 something in the builder won't reach entries you already imported — delete those
 first if you need the change to land.
 
+### The browser's archive
+
+The userscript's **One file for Legium** writes the same archive as
+`build_archive.py` — same sources, contributors, locators, note folding and
+`import.notebook-web` origin, and the same source and contributor uuids — with
+two differences, both so a reader can export again after reading more and
+import the new file over the old:
+
+- **A passage's uuid comes from its ASIN and its text and note**, not its
+  position in the book. `importArchive` matches entries by uuid alone, so a
+  position-derived id shifts for every passage after a new mid-book highlight,
+  and all of them would arrive twice.
+- **`updatedAt` is fixed at `1970-01-01T00:00:00Z`.** An entry already in the
+  store is replaced only when the incoming `updatedAt` is strictly newer, and
+  replacing resets its note, favourite and tags to the file's. Stamped with the
+  export time, every re-import would undo the reader's edits. `createdAt` is the
+  export time, which is what Legium shows as *Gathered*; with `updatedAt`
+  earlier, no *Edited* line appears.
+
+Because the passage uuids differ, **don't import the browser's archive over
+books that `build_archive.py` brought in**: each of their passages would arrive
+a second time. `build_archive.py` keeps its position-derived ids so that the
+archives already imported from it stay stable.
+
 ---
 
 ## How this was checked
@@ -261,9 +371,17 @@ Nothing here was validated against a reimplementation of Legium.
   the two described above, with its bookmark absent as expected.
 - `tools/test_compare.py` covers the comparator: folding, anthology roll-up,
   note pairing, drift detection, and books present on one side only.
+- `tools/test_archive.py` runs the userscript's archive writer under `jsc` on an
+  invented shelf and checks it against `build_archive.py` field by field, apart
+  from the two intended differences; its SHA-1 and uuid5 against Python's; that
+  a highlight added mid-book leaves every other passage's uuid alone; and that
+  the plain JSON feeds `build_archive.py`. Run on the 263-entry scrape as well,
+  the two writers agreed on all 241 sources, 211 contributors and 4,510
+  passages.
 
 ```sh
 python3 tools/test_compare.py
+python3 tools/test_archive.py
 ```
 
 ---
@@ -274,6 +392,9 @@ Constants at the top of the userscript: `fetchDelayMs` (throttle between books),
 `retries`, `downloadDelayMs`. `SELECTORS` holds every page-specific selector in
 one object, so an Amazon redesign is a one-line fix rather than a hunt.
 `window.legiumExport` exposes the internals for poking from the console.
+
+**To release a change**, raise `@version` in the header. Tampermonkey compares
+it with the installed copy and updates only when it is higher.
 
 ## out/
 
