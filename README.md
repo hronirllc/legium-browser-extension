@@ -8,8 +8,22 @@ in your own browser, while you are signed in. Nothing is sent anywhere else.
 
 ## Install
 
-It is a userscript: a small script that a browser extension runs on one web
-page. Use Firefox, Chrome or Edge on a computer.
+Two ways, which do the same thing. On a computer, use Firefox for the first,
+or any of Firefox, Chrome, Edge or Safari for the second.
+
+### Firefox extension
+
+*Not yet published.* Until it is, see
+[Trying the extension before it is published](#trying-the-extension-before-it-is-published).
+
+Once installed, it adds a toolbar button. On the notebook page the
+button brings back the export panel if you closed it; anywhere else it opens
+the notebook page.
+
+### Userscript
+
+A userscript is a small script that another extension, such as Tampermonkey,
+runs on one web page.
 
 1. Install **Tampermonkey**:
    [for Firefox](https://addons.mozilla.org/firefox/addon/tampermonkey/),
@@ -23,7 +37,7 @@ page. Use Firefox, Chrome or Edge on a computer.
    the code instead, press **Raw**.)
 
 Tampermonkey checks the same address for new versions and updates the script
-itself.
+itself. On Safari, the free **Userscripts** app from the App Store runs it too.
 
 ## Export
 
@@ -123,7 +137,7 @@ matters if you ever import the same book twice.
 
 ## The pipeline
 
-For a shelf that overlaps what Legium already holds, the userscript is only the
+For a shelf that overlaps what Legium already holds, the export is only the
 first step. The full path:
 
 ```sh
@@ -143,11 +157,14 @@ Step 3 produces a single `legium.archive` JSON — one import instead of hundred
 
 | tool | what it does |
 |---|---|
-| `legium.user.js` | Scrapes the notebook page; writes a `legium.archive`, plain JSON, or per-book notebook-export HTML |
+| `extension/notebook.js` | The exporter: scrapes the notebook page; writes a `legium.archive`, plain JSON, or a zip of per-book notebook-export HTML; draws the panel |
+| `extension/content.js`, `background.js`, `manifest.json` | The Firefox extension around it: saves files with the downloads API, and the toolbar button |
+| `legium.user.js` | The same exporter as a userscript. **Generated**; don't edit it |
+| `tools/build_userscript.py` | Writes the userscript from `extension/notebook.js` and the manifest; `--check` fails if it is stale |
 | `tools/compare.py` | Checks a scrape against a Legium archive; `--emit-new` lists the books Legium lacks |
 | `tools/build_archive.py` | Turns a scrape into one importable `legium.archive` JSON |
 | `tools/test_compare.py` | Regression suite for the comparator |
-| `tools/test_archive.py` | Runs the userscript's archive writer under `jsc` and checks it against `build_archive.py` |
+| `tools/test_archive.py` | Runs the exporter's writers under `jsc`: the archive against `build_archive.py`, the zip against Python's `zipfile`; checks the userscript is current |
 
 ### Which format to import
 
@@ -329,7 +346,7 @@ first if you need the change to land.
 
 ### The browser's archive
 
-The userscript's **One file for Legium** writes the same archive as
+The exporter's **One file for Legium** writes the same archive as
 `build_archive.py` — same sources, contributors, locators, note folding and
 `import.notebook-web` origin, and the same source and contributor uuids — with
 two differences, both so a reader can export again after reading more and
@@ -373,7 +390,7 @@ Nothing here was validated against a reimplementation of Legium.
   the two described above, with its bookmark absent as expected.
 - `tools/test_compare.py` covers the comparator: folding, anthology roll-up,
   note pairing, drift detection, and books present on one side only.
-- `tools/test_archive.py` runs the userscript's archive writer under `jsc` on an
+- `tools/test_archive.py` runs the exporter's archive writer under `jsc` on an
   invented shelf and checks it against `build_archive.py` field by field, apart
   from the two intended differences; its SHA-1 and uuid5 against Python's; that
   a highlight added mid-book leaves every other passage's uuid alone; and that
@@ -390,13 +407,78 @@ python3 tools/test_archive.py
 
 ## Config
 
-Constants at the top of the userscript: `fetchDelayMs` (throttle between books),
-`retries`, `downloadDelayMs`. `SELECTORS` holds every page-specific selector in
+Constants at the top of `extension/notebook.js`: `fetchDelayMs` (throttle
+between books) and `retries`. `SELECTORS` holds every page-specific selector in
 one object, so an Amazon redesign is a one-line fix rather than a hunt.
-`window.legiumExport` exposes the internals for poking from the console.
+`legiumExport` exposes the internals for poking from the console (the
+userscript's page console; for the extension, the console's context menu set to
+the extension).
 
-**To release a change**, raise `@version` in the header. Tampermonkey compares
-it with the installed copy and updates only when it is higher.
+## One exporter, two packages
+
+The exporter is written once, in `extension/notebook.js`, and knows nothing
+about how a file is saved: whoever loads it calls
+`legiumExport.start({ save })`.
+
+- **The extension** loads it as a content script, then `content.js`, whose
+  `save` sends the file to `background.js`. The background script saves it with
+  the downloads API. Sending a file somewhere else — a desktop app, say, through
+  native messaging — would be a second branch in its `deliver`.
+- **The userscript** is `notebook.js` with a header made from the manifest and
+  a `save` that clicks a download link, written by `tools/build_userscript.py`.
+
+So after any change under `extension/`:
+
+```sh
+python3 tools/build_userscript.py
+python3 tools/test_archive.py      # fails if the userscript was not rebuilt
+```
+
+Two things differ between the packages and are worth knowing when one works
+and the other doesn't. In a Firefox content script, `fetch` is made on the
+extension's behalf, so the exporter uses `content.fetch` there, which is the
+page's own and carries its sign-in. And messages between content and
+background scripts carry their fields at the top level, so the file travels as
+`{ type: 'save', file }`: spread into the message, the file's own `type` (its
+MIME type) replaced the message's, and every save was ignored while reporting
+success.
+
+## Trying the extension before it is published
+
+Firefox installs only extensions Mozilla has signed, except for a temporary
+install, which lasts until Firefox quits:
+
+1. In Firefox, open `about:debugging#/runtime/this-firefox`.
+2. Press **Load Temporary Add-on…** and choose `extension/manifest.json`.
+3. Open <https://read.amazon.com/notebook>. The panel appears top right.
+
+After editing a file, press **Reload** on the same page. **Inspect** opens the
+background script's console, where a failed save says why.
+
+To keep it installed across restarts without signing, use Firefox Developer
+Edition or Nightly, set `xpinstall.signatures.required` to `false` in
+`about:config`, and install the `.zip` that `web-ext build` makes.
+
+## Releasing
+
+1. Raise `version` in `extension/manifest.json` and run
+   `tools/build_userscript.py`, which copies it into the userscript's
+   `@version`. Tampermonkey updates only when the version is higher; Mozilla
+   refuses a version it has already signed.
+2. Commit, then tag `v<version>` and push the tag.
+
+`.github/workflows/extension.yml` runs the tests and Mozilla's `web-ext lint`
+on every push, and on a `v*` tag also signs the extension with Mozilla and
+attaches the `.xpi` and the userscript to a GitHub release. Signing needs, in
+the repository's settings:
+
+- secrets `AMO_JWT_ISSUER` and `AMO_JWT_SECRET`: the API key and secret from
+  <https://addons.mozilla.org/developers/addon/api/key/>, under a free
+  addons.mozilla.org developer account;
+- optionally a variable `AMO_CHANNEL`: `unlisted` (the default) signs a file
+  you host yourself, usually within minutes; `listed` submits it for a public
+  page on addons.mozilla.org, which Mozilla reviews and then keeps updated.
+  The first listed version may need its listing filled in on the site.
 
 ## out/
 

@@ -7,3 +7,7 @@
 out/
 __pycache__/
 *.pyc
+
+# web-ext build and sign output
+dist/
+web-ext-artifacts/

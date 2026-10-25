@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-Checks the userscript's own archive writer against `build_archive.py`.
+Checks the exporter's own writers: the archive against `build_archive.py`,
+the zip against Python's `zipfile`, and that the userscript is built from the
+current `extension/notebook.js`.
 
 The userscript builds the Legium archive in the browser; `build_archive.py`
 builds it from a saved scrape. They must agree on everything except the two
@@ -11,11 +13,11 @@ under `jsc` on an invented shelf and compares the two field by field.
     python3 tools/test_archive.py
 """
 
-import hashlib, json, os, subprocess, sys, tempfile, unittest, uuid
+import base64, hashlib, io, json, os, subprocess, sys, tempfile, unittest, uuid, zipfile, zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-SCRIPT = os.path.join(ROOT, "legium.user.js")
+SCRIPT = os.path.join(ROOT, "extension", "notebook.js")
 JSC = "/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc"
 STAMP = "2026-10-25T12:00:00Z"
 
@@ -143,6 +145,36 @@ class ArchiveTests(unittest.TestCase):
         rebuilt = py_archive(plain)
         self.assertEqual(rebuilt["sources"], self.py["sources"])
         self.assertEqual(len(rebuilt["entries"]), len(self.py["entries"]))
+
+
+    def test_zip_opens_and_holds_the_files(self):
+        files = [{"name": "Plain - Author.html", "data": "<p>one</p>"},
+                 {"name": "Café “Title” - 日本語.html", "data": "two ✓ " * 500}]
+        got = run_jsc(
+            f"const z = X.writeZip({json.dumps(files)}, new Date(2026, 9, 25, 12, 30, 10));"
+            "let s = ''; z.forEach(b => s += String.fromCharCode(b));"
+            "print(JSON.stringify({zip: btoa(s)}));"
+        )
+        archive = zipfile.ZipFile(io.BytesIO(base64.b64decode(got["zip"])))
+        self.assertIsNone(archive.testzip())
+        self.assertEqual(archive.namelist(), [f["name"] for f in files])
+        for f in files:
+            self.assertEqual(archive.read(f["name"]).decode(), f["data"])
+        self.assertEqual(archive.infolist()[0].date_time, (2026, 10, 25, 12, 30, 10))
+
+    def test_crc32_matches_zlib(self):
+        samples = ["", "a", "Café “quoted” — 日本語" * 40]
+        got = run_jsc(
+            f"print(JSON.stringify({json.dumps(samples)}.map(s =>"
+            " X.crc32(Uint8Array.from(unescape(encodeURIComponent(s)), c => c.charCodeAt(0))))));"
+        )
+        self.assertEqual(got, [zlib.crc32(s.encode()) for s in samples])
+
+
+class UserscriptTests(unittest.TestCase):
+    def test_userscript_is_built_from_the_current_core(self):
+        subprocess.run([sys.executable, os.path.join(HERE, "build_userscript.py"), "--check"],
+                       capture_output=True, check=True)
 
 
 if __name__ == "__main__":

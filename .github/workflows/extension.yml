@@ -1,0 +1,70 @@
+# Tests and lints on every push; on a v* tag, signs the Firefox extension with
+# Mozilla and publishes a release holding the .xpi and the userscript.
+#
+# Signing needs repository secrets AMO_JWT_ISSUER and AMO_JWT_SECRET (an API key
+# from https://addons.mozilla.org/developers/addon/api/key/), and optionally a
+# variable AMO_CHANNEL: "unlisted" (default, self-hosted) or "listed".
+
+name: extension
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  test:
+    # The archive tests run the exporter under macOS's jsc.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/test_compare.py
+      - run: python3 tools/test_archive.py
+      - run: python3 tools/build_userscript.py --check
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npx --yes web-ext@8 lint --source-dir extension
+      - run: npx --yes web-ext@8 build --source-dir extension --artifacts-dir dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-unsigned
+          path: dist/*.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, lint]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Tag matches the manifest's version
+        run: |
+          version=$(python3 -c 'import json; print(json.load(open("extension/manifest.json"))["version"])')
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME, manifest $version"; exit 1; }
+      - name: Sign with Mozilla
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: >
+          npx --yes web-ext@8 sign --source-dir extension --artifacts-dir dist
+          --channel "${{ vars.AMO_CHANNEL || 'unlisted' }}"
+      # A listed version waits for Mozilla's review and comes back without an
+      # .xpi; the release then carries the userscript alone.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes \
+            dist/*.xpi legium.user.js
