@@ -91,6 +91,8 @@ Amazon's notebook page has no chapter names, no bookmarks, no publisher or year,
 and nothing from books copied onto a device over USB. See
 [What it does not give you](#what-it-does-not-give-you).
 
+If you want to export more metadata, you can do it from the Kindle phone app by opening your book and clicking the annotations view (the notebook icon) then clicking share. You can email/save that file and then import it into Legium (Settings -> import)
+
 ## The ways to save
 
 Every option comes from the same read of the notebook page, so each holds the
@@ -192,103 +194,6 @@ a click. Firefox and Safari don't let a web page open a Save dialog, so the
 userscript there has no such box: set Firefox to **Always ask you where to save
 files** (Settings → General → Downloads) if you want to choose.
 
----
-
-# How it works
-
-The rest is for whoever maintains this. The findings come from a real shelf;
-the book titles, authors and quoted passages used to illustrate them are
-invented.
-
-Legium imports the per-book HTML that the reading app's own **Export notebook**
-produces, and the single-file `legium.archive` JSON its own export used to
-write. The script can emit both. The notebook HTML reproduces the app's format
-exactly — the preamble is copied verbatim from a real export, and every block
-reproduces a shape `NotebookExportParser` has a fixture for. The archive is
-built the way `tools/build_archive.py` builds one, with two differences
-described under [The browser's archive](#the-browsers-archive).
-
-Two things matter before relying on either: the web page is **thinner** than
-the app's export, and the two sources **disagree slightly on wording**, which
-matters if you ever import the same book twice.
-
----
-
-## The pipeline
-
-For a shelf that overlaps what Legium already holds, the export is only the
-first step. The full path:
-
-```sh
-# 1. Scrape. Choose "Plain JSON" in the panel, untick every Tidy up
-#    switch, and click "Export all books".
-#    -> out/web-export.json
-
-# 2. Compare against what Legium already has, and list what is genuinely new.
-python3 tools/compare.py Legium-export.json out/web-export.json \
-        --emit-new new.txt
-
-# 3. Build one archive out of the new books.
-python3 tools/build_archive.py out/web-export.json \
-        out/legium-web.json --only new.txt
-```
-
-Step 3 produces a single `legium.archive` JSON — one import instead of hundreds.
-
-| tool | what it does |
-|---|---|
-| `extension/notebook.js` | The exporter: scrapes the notebook page; writes a `legium.archive`, plain JSON, or a zip of per-book notebook-export HTML; draws the panel |
-| `extension/content.js`, `background.js`, `manifest.json` | The Firefox extension around it: saves files with the downloads API, and the toolbar button |
-| `legium.user.js` | The same exporter as a userscript. **Generated**; don't edit it |
-| `tools/build_userscript.py` | Writes the userscript from `extension/notebook.js` and the manifest; `--check` fails if it is stale |
-| `tools/compare.py` | Checks a scrape against a Legium archive; `--emit-new` lists the books Legium lacks |
-| `tools/build_archive.py` | Turns a scrape into one importable `legium.archive` JSON |
-| `tools/test_compare.py` | Regression suite for the comparator |
-| `tools/test_archive.py` | Runs the exporter's writers under `jsc`: the archive against `build_archive.py`, the zip against Python's `zipfile`; checks the userscript is current |
-
-### Which format to import
-
-| situation | import |
-|---|---|
-| Book Legium has never seen | The archive JSON — one file, all of them |
-| Book Legium holds **partially** | The **HTML**, so `HighlightImport` merges into the existing source |
-| Book Legium already holds in full | Neither. Keep what you have — see below |
-
-The archive path matches sources **by UUID and never by title**, and does no
-text-level de-duplication. Hand it a book Legium already holds and you get a
-second source. That restriction is the whole reason `compare.py` exists.
-
----
-
-## What the notebook page actually gives you
-
-Findings from a signed-in shelf of 263 rail entries. These are why the selectors
-are what they are.
-
-- **`?asin=` returns a fragment**, not a page: two hidden inputs and then the
-  annotation rows, with no `#kp-notebook-annotations` wrapper. Parsing falls
-  back to the document body so both that and the assembled page work.
-- **The pagination inputs are classes in the fragment and ids on the page**
-  (`kp-notebook-content-limit-state`,
-  `kp-notebook-annotations-next-page-start`). Both spellings are matched.
-- **Pagination is load-bearing.** One book returned 97 highlights on its first
-  page and 162 across three. Reading only the first page loses a third of a book
-  with no error.
-- **A header names either a page or a location, never both** — but the hidden
-  `#kp-annotation-location` input holds the true location regardless. On a
-  page-showing book the header reads `Page: 195` while the input says `2119`, so
-  both are recovered and written as `Page 195 · Location 2119`.
-- Locations print with thousands separators (`Location: 1,234`).
-- **The colour comes from the CSS class, not the header's label**, and the two
-  disagree: a highlight the header calls `Aqua highlight` carries the class
-  `kp-notebook-highlight-blue`. The class is correct, because the reading app's
-  own export writes `annotation_blue` too — reading the label would give
-  web-exported books a colour string no app-exported book ever uses. Across the
-  scrape only two values occur: `yellow` (4,678) and `blue` (162).
-- **A row with no note still carries an `#annotationNoteHeader`**, hidden with
-  `aok-hidden`. Emptiness of `#note` decides, not the header's presence.
-- **The rail lists some books twice** — 13 of 263, each pair carrying identical
-  annotations. De-duplicated by ASIN in `readLibrary`.
 
 ### What it does not give you
 
@@ -373,11 +278,6 @@ In practice one book was a partial import: **Northern Routes, 2 passages in the
 archive against 236 on the web.** `compare.py` flags books where the web holds
 substantially more. Import those as HTML so `HighlightImport` merges them in.
 
-### Books with no web counterpart
-
-Ten archive sources had none: poems and OCR entries, plus five that look
-sideloaded. Nothing to merge — they're already yours, and the web will never
-have them.
 
 ---
 
