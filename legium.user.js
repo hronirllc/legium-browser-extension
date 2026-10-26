@@ -4,6 +4,10 @@
 // @version     2.3.0
 // @description Saves every highlight and note in your notebook (read.amazon.com/notebook) as one file for Legium, as plain JSON, or as notebook files.
 // @author      Hronir LLC
+// @homepageURL https://github.com/hronirllc/legium-browser-extension
+// @supportURL  https://github.com/hronirllc/legium-browser-extension/issues
+// @updateURL   https://github.com/hronirllc/legium-browser-extension/releases/latest/download/legium.user.js
+// @downloadURL https://github.com/hronirllc/legium-browser-extension/releases/latest/download/legium.user.js
 // @match       https://read.amazon.com/notebook*
 // @match       https://read.amazon.co.uk/notebook*
 // @match       https://read.amazon.co.jp/notebook*

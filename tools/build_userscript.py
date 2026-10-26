@@ -12,7 +12,8 @@ two can't drift apart.
     python3 tools/build_userscript.py --check   fail if it is out of date
 
 Run it after changing anything under `extension/`, and commit the result:
-Tampermonkey installs and updates from the committed file.
+each release attaches the committed file, and Tampermonkey updates from the
+newest release's copy.
 """
 
 import json, os, sys
@@ -78,6 +79,12 @@ def build():
         ("version", manifest["version"]),
         ("description", manifest["description"]),
         ("author", "Hronir LLC"),
+        ("homepageURL", manifest["homepage_url"]),
+        ("supportURL", f"{manifest['homepage_url']}/issues"),
+        # The newest release's copy, not main's, so a change reaches friends
+        # only once it is tagged.
+        ("updateURL", f"{manifest['homepage_url']}/releases/latest/download/{os.path.basename(OUT)}"),
+        ("downloadURL", f"{manifest['homepage_url']}/releases/latest/download/{os.path.basename(OUT)}"),
     ]
     for script in manifest["content_scripts"]:
         fields += [("match", m) for m in script["matches"]]

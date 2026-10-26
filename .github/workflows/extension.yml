@@ -1,9 +1,10 @@
 # Tests and lints on every push; on a v* tag, signs the Firefox extension with
-# Mozilla and publishes a release holding the .xpi and the userscript.
+# Mozilla and publishes a release holding the .xpi, the updates.json that
+# installed copies check, and the userscript.
 #
 # Signing needs repository secrets AMO_JWT_ISSUER and AMO_JWT_SECRET (an API key
 # from https://addons.mozilla.org/developers/addon/api/key/), and optionally a
-# variable AMO_CHANNEL: "unlisted" (default, self-hosted) or "listed".
+# variable AMO_CHANNEL: "unlisted" (default, hosted here) or "listed".
 
 name: extension
 
@@ -30,7 +31,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npx --yes web-ext@8 lint --source-dir extension
+      # Self-hosted: the manifest's update_url is only allowed off Mozilla's site.
+      - run: npx --yes web-ext@8 lint --self-hosted --source-dir extension
       - run: npx --yes web-ext@8 build --source-dir extension --artifacts-dir dist
       - uses: actions/upload-artifact@v4
         with:
@@ -52,6 +54,17 @@ jobs:
         run: |
           version=$(python3 -c 'import json; print(json.load(open("extension/manifest.json"))["version"])')
           test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME, manifest $version"; exit 1; }
+      # Mozilla refuses an update_url on a listed add-on; it updates those itself.
+      - name: Leave updates to Mozilla
+        if: vars.AMO_CHANNEL == 'listed'
+        run: |
+          python3 - <<'PY'
+          import json
+          path = "extension/manifest.json"
+          manifest = json.load(open(path))
+          del manifest["browser_specific_settings"]["gecko"]["update_url"]
+          json.dump(manifest, open(path, "w"), indent=2)
+          PY
       - name: Sign with Mozilla
         env:
           WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
@@ -59,6 +72,9 @@ jobs:
         run: >
           npx --yes web-ext@8 sign --source-dir extension --artifacts-dir dist
           --channel "${{ vars.AMO_CHANNEL || 'unlisted' }}"
+      - name: Name the file, and write updates.json
+        if: vars.AMO_CHANNEL != 'listed'
+        run: python3 tools/release_files.py dist/*.xpi
       # A listed version waits for Mozilla's review and comes back without an
       # .xpi; the release then carries the userscript alone.
       - name: Publish the release
@@ -67,4 +83,4 @@ jobs:
         run: |
           shopt -s nullglob
           gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes \
-            dist/*.xpi legium.user.js
+            dist/*.xpi dist/*.json legium.user.js

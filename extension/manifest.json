@@ -3,6 +3,7 @@
   "name": "Legium",
   "version": "2.3.0",
   "description": "Saves every highlight and note in your notebook (read.amazon.com/notebook) as one file for Legium, as plain JSON, or as notebook files.",
+  "homepage_url": "https://github.com/hronirllc/legium-browser-extension",
   "icons": {
     "48": "icons/icon.svg",
     "96": "icons/icon.svg"
@@ -46,6 +47,7 @@
     "gecko": {
       "id": "legium@hronir.dev",
       "strict_min_version": "140.0",
+      "update_url": "https://github.com/hronirllc/legium-browser-extension/releases/latest/download/updates.json",
       "data_collection_permissions": {
         "required": [
           "none"

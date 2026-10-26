@@ -13,8 +13,15 @@ or any of Firefox, Chrome, Edge or Safari for the second.
 
 ### Firefox extension
 
-Called **Legium**. *Not yet published.* Until it is, see
-[Trying the extension before it is published](#trying-the-extension-before-it-is-published).
+Called **Legium**. Signed by Mozilla, but not on Mozilla's add-ons site:
+
+1. Download [legium.xpi](https://github.com/hronirllc/legium-browser-extension/releases/latest/download/legium.xpi),
+   the newest version.
+2. Drag the downloaded file onto a Firefox window, or open `about:addons`,
+   press the gear (⚙) and choose **Install Add-on From File…**.
+3. Press **Add**.
+
+Firefox keeps it up to date by itself.
 
 Once installed, it adds a toolbar button. On the notebook page the
 button brings back the export panel if you closed it; anywhere else it opens
@@ -32,11 +39,10 @@ runs on one web page.
 2. **Chrome and Edge only:** open `chrome://extensions` (`edge://extensions`),
    press **Details** under Tampermonkey, and turn on **Allow User Scripts**.
    Without it the script installs but never runs.
-3. Open [legium.user.js](legium.user.js?raw=true).
-   Tampermonkey shows the script's install page; press **Install**. (If you see
-   the code instead, press **Raw**.)
+3. Open [legium.user.js](https://github.com/hronirllc/legium-browser-extension/releases/latest/download/legium.user.js).
+   Tampermonkey shows the script's install page; press **Install**.
 
-Tampermonkey checks the same address for new versions and updates the script
+Tampermonkey checks the newest release for new versions and updates the script
 itself. On Safari, the free **Userscripts** app from the App Store runs it too.
 
 ## Export
@@ -522,7 +528,7 @@ background scripts carry their fields at the top level, so the file travels as
 MIME type) replaced the message's, and every save was ignored while reporting
 success.
 
-## Trying the extension before it is published
+## Trying a change before releasing it
 
 Firefox installs only extensions Mozilla has signed, except for a temporary
 install, which lasts until Firefox quits:
@@ -542,22 +548,39 @@ Edition or Nightly, set `xpinstall.signatures.required` to `false` in
 
 1. Raise `version` in `extension/manifest.json` and run
    `tools/build_userscript.py`, which copies it into the userscript's
-   `@version`. Tampermonkey updates only when the version is higher; Mozilla
-   refuses a version it has already signed.
+   `@version`. Firefox and Tampermonkey update only when the version is higher;
+   Mozilla refuses a version it has already signed.
 2. Commit, then tag `v<version>` and push the tag.
 
 `.github/workflows/extension.yml` runs the tests and Mozilla's `web-ext lint`
-on every push, and on a `v*` tag also signs the extension with Mozilla and
-attaches the `.xpi` and the userscript to a GitHub release. Signing needs, in
-the repository's settings:
+on every push. On a `v*` tag it also has Mozilla sign the extension, then makes
+a GitHub release holding:
+
+| file | what it is for |
+|---|---|
+| `legium-<version>.xpi` | The signed extension, under its version |
+| `legium.xpi` | The same file; [Install](#install) links to `releases/latest/download/legium.xpi`, so the link always gives the newest |
+| `updates.json` | Written by `tools/release_files.py`. Each installed copy reads it about once a day, at the manifest's `update_url`, `releases/latest/download/updates.json`, and installs the `.xpi` it names when that is newer |
+| `legium.user.js` | The userscript, which Tampermonkey checks through its `@updateURL` |
+
+So an update reaches everyone once its release is published; nothing else is
+uploaded anywhere.
+
+Signing is *unlisted*: Mozilla signs the file, usually within minutes, and it
+is hosted here rather than on addons.mozilla.org. The first signing creates the
+add-on on Mozilla's side; no upload by hand is needed. It needs, in the
+repository's settings:
 
 - secrets `AMO_JWT_ISSUER` and `AMO_JWT_SECRET`: the API key and secret from
   <https://addons.mozilla.org/developers/addon/api/key/>, under a free
-  addons.mozilla.org developer account;
-- optionally a variable `AMO_CHANNEL`: `unlisted` (the default) signs a file
-  you host yourself, usually within minutes; `listed` submits it for a public
-  page on addons.mozilla.org, which Mozilla reviews and then keeps updated.
-  The first listed version may need its listing filled in on the site.
+  addons.mozilla.org developer account.
+
+To move to a public page on addons.mozilla.org later, set a repository variable
+`AMO_CHANNEL` to `listed`. Mozilla then reviews each version and updates
+installed copies itself, so the workflow drops `update_url`, which Mozilla
+refuses on a listed add-on, and makes no `updates.json`; the release carries
+only the userscript. The first listed version needs its listing (summary,
+category, screenshots) filled in on the site.
 
 ## out/
 
