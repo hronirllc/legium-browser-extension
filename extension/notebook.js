@@ -525,7 +525,8 @@
      * Books as plain JSON, tied to no app: what the notebook page said, as the
      * script read it, and nothing Legium-specific. The same shape as
      * `out/web-export.json`, so `tools/compare.py` and
-     * `tools/build_archive.py` read it. `shelf` counts the library rail, books
+     * `tools/build_archive.py` read it, plus `authors`: the author line as a
+     * list of people (`splitAuthors`). `shelf` counts the library rail, books
      * with no highlights included; `books` holds only those with some.
      */
     function writePlain(books, shelf, now = new Date()) {
@@ -538,6 +539,7 @@
                 asin: book.asin,
                 title: book.title,
                 author: book.author,
+                authors: splitAuthors(book.author),
                 pages: book.pages,
                 records: book.records.map((record) => ({
                     kind: record.kind,
@@ -640,11 +642,46 @@
         return `${fold(text)}\x1f${fold(note)}`;
     }
 
-    /** ImportedBook.authorDisplayName: a single comma means "Surname, Given". */
+    const NAME_SUFFIX = /^(jr|sr|ii|iii|iv|phd|md)\.?$/i;
+
+    /**
+     * ImportedBook.authorDisplayName: a single comma means "Surname, Given" —
+     * unless what follows it is a suffix, as in "Martin Luther King, Jr.".
+     */
     function authorDisplay(name) {
         const trimmed = (name || '').trim();
         const parts = trimmed.split(',').map((part) => part.trim());
-        return parts.length === 2 && parts[0] && parts[1] ? `${parts[1]} ${parts[0]}` : trimmed;
+        return parts.length === 2 && parts[0] && parts[1] && !NAME_SUFFIX.test(parts[1])
+            ? `${parts[1]} ${parts[0]}`
+            : trimmed;
+    }
+
+    /**
+     * The people in one author line, in order.
+     *
+     * The library rail gives a book's authors as a single line in reading
+     * order: "Ada Marsh and Ben Ellery", "Ada Marsh, Ben Ellery, and Cy Dunn".
+     * Credited whole, that line becomes one person named all of them. A line
+     * with " and ", " & " or two or more commas is a list; anything else is one
+     * name, reversed if it is "Surname, Given". A line with a semicolon is
+     * Amazon's own scrambled metadata and is kept exactly as found: no split or
+     * reversal of it is right.
+     */
+    function splitAuthors(line) {
+        const text = (line || '').replace(/\s+/g, ' ').trim();
+        if (!text) return [];
+        const isList = / and | & /.test(text) || (text.match(/,/g) || []).length >= 2;
+        if (text.includes(';')) return [text];
+        if (!isList) return [authorDisplay(text)];
+        const names = [];
+        text.split(/,| and | & /)
+            .map((part) => part.trim().replace(/^(and|&) /, ''))
+            .filter(Boolean)
+            .forEach((part) => {
+                if (NAME_SUFFIX.test(part) && names.length) names[names.length - 1] += `, ${part}`;
+                else names.push(part);
+            });
+        return names;
     }
 
     /** HighlightImport.locator: a page when the book has one, else a location. */
@@ -710,18 +747,14 @@
             if (!found.length) return;
 
             const sourceUUID = det('source', book.asin);
-            const creator = authorDisplay(book.author);
-            const contributions = [];
-            if (creator) {
-                if (!people.has(creator)) {
-                    people.set(creator, det('contributor', creator));
+            const contributions = splitAuthors(book.author).map((name, position) => {
+                if (!people.has(name)) {
+                    people.set(name, det('contributor', name));
                     // sortName left blank so Legium derives its own.
-                    contributors.push({ uuid: people.get(creator), name: creator, sortName: '', createdAt: stamp });
+                    contributors.push({ uuid: people.get(name), name, sortName: '', createdAt: stamp });
                 }
-                contributions.push({
-                    contributorUUID: people.get(creator), role: 'author', position: 0, marcCode: 'aut',
-                });
-            }
+                return { contributorUUID: people.get(name), role: 'author', position, marcCode: 'aut' };
+            });
             sources.push({
                 uuid: sourceUUID, title: book.title, kind: 'book',
                 createdAt: stamp, tagUUIDs: [], contributions,
@@ -861,7 +894,10 @@
         }
         #legium-export-panel fieldset { border: 0; margin: 8px 0 0; padding: 0; }
         #legium-export-panel legend { padding: 0; font-size: 12px; font-weight: 600; }
-        #legium-export-panel label { display: block; margin-top: 4px; font-size: 12px; }
+        #legium-export-panel label { display: block; margin-top: 6px; font-size: 12px; }
+        #legium-export-panel .legium-export-detail {
+            display: block; margin: 1px 0 0 20px; font-size: 11px; color: #555;
+        }
         #legium-export-done { margin-top: 10px; font-weight: 600; }
         #legium-export-log {
             margin-top: 10px; max-height: 190px; overflow-y: auto;
@@ -873,9 +909,24 @@
     `;
 
     const OUTPUTS = [
-        { value: 'archive', label: 'One file for Legium (.json)' },
-        { value: 'plain', label: 'Plain JSON, for any app or script' },
-        { value: 'notebooks', label: 'notebook files, one per book (.zip)' },
+        {
+            value: 'archive',
+            label: 'One file for Legium (.json)',
+            detail: 'Every book at once. In Legium: Settings → Archive → Import archive…. ' +
+                'Safe to import again later; adds only what is new.',
+        },
+        {
+            value: 'plain',
+            label: 'Plain JSON, for any app or script',
+            detail: 'Every book at once, as Amazon lists it. Legium does not import this one.',
+        },
+        {
+            value: 'notebooks',
+            label: 'notebook files (.zip)',
+            detail: 'One .zip holding an .html file per book, as the reading app exports them. ' +
+                'Import a book at a time with Settings → Import → Import highlights…; ' +
+                'use it for books Legium already has, which it adds to rather than copying.',
+        },
     ];
 
     /** An element with properties set and children appended. */
@@ -898,7 +949,8 @@
         const choices = OUTPUTS.map((output, index) =>
             el('label', {},
                 el('input', { type: 'radio', name: 'legium-export-as', value: output.value, checked: index === 0 }),
-                ` ${output.label}`));
+                ` ${output.label}`,
+                el('span', { className: 'legium-export-detail', textContent: output.detail })));
 
         const panel = el('div', { id: 'legium-export-panel' },
             el('style', { textContent: PANEL_CSS }),
@@ -970,7 +1022,10 @@
             await sleep(CONFIG.fetchDelayMs);
         }
 
-        const day = new Date().toISOString().slice(0, 10);
+        // The reader's own date, not UTC's: an evening export is named for today.
+        const today = new Date();
+        const day = [today.getFullYear(), today.getMonth() + 1, today.getDate()]
+            .map((part) => String(part).padStart(2, '0')).join('-');
         const failures = failed ? ` ${failed} book(s) failed; see the list below, and export again to retry them.` : '';
         count.textContent = `${library.length} book(s) on your shelf.`;
 
@@ -1057,7 +1112,7 @@
         start,
         readLibrary, fetchBook, fetchDocument, readAnnotations,
         readPlace, readColour, annotationsRoot, writeNotebook, writeRecord, safeFilename, esc,
-        writeArchive, writePlain, writeZip, passages, matchKey, uuid5, sha1, crc32,
+        writeArchive, writePlain, writeZip, passages, matchKey, splitAuthors, uuid5, sha1, crc32,
         SELECTORS, CONFIG,
     };
 })();

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Legium Highlight Exporter",
-  "version": "2.1.0",
+  "name": "Legium",
+  "version": "2.2.0",
   "description": "Saves every highlight and note in your notebook (read.amazon.com/notebook) as one file for Legium, as plain JSON, or as notebook files.",
   "icons": {
     "48": "icons/icon.svg",
@@ -12,9 +12,13 @@
     "default_icon": "icons/icon.svg"
   },
   "background": {
-    "scripts": ["background.js"]
+    "scripts": [
+      "background.js"
+    ]
   },
-  "permissions": ["downloads"],
+  "permissions": [
+    "downloads"
+  ],
   "content_scripts": [
     {
       "matches": [
@@ -31,16 +35,21 @@
         "https://read.amazon.com.br/notebook*",
         "https://read.amazon.com.mx/notebook*"
       ],
-      "js": ["notebook.js", "content.js"],
+      "js": [
+        "notebook.js",
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "browser_specific_settings": {
     "gecko": {
-      "id": "highlight-exporter@hronir.dev",
+      "id": "legium@hronir.dev",
       "strict_min_version": "140.0",
       "data_collection_permissions": {
-        "required": ["none"]
+        "required": [
+          "none"
+        ]
       }
     }
   }

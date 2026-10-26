@@ -13,7 +13,7 @@ or any of Firefox, Chrome, Edge or Safari for the second.
 
 ### Firefox extension
 
-*Not yet published.* Until it is, see
+Called **Legium**. *Not yet published.* Until it is, see
 [Trying the extension before it is published](#trying-the-extension-before-it-is-published).
 
 Once installed, it adds a toolbar button. On the notebook page the
@@ -73,7 +73,7 @@ any you have edited, tagged or starred. Two cases bring in a second copy:
 The `.json` file matches books by an id made from the book, not by
 title, so a book you imported earlier from the reading app's own **Export
 notebook** would arrive a second time. For those books, choose **notebook
-files, one per book (.zip)** instead, unzip it, and import each book's `.html`
+files (.zip)** instead, unzip it, and import each book's `.html`
 with **Settings → Import → Import highlights…**. That import merges into the
 book you have and skips passages already there. See
 [Merging with what you already have](#merging-with-what-you-already-have).
@@ -86,13 +86,29 @@ and nothing from books you put on a device over USB. See
 
 ## The three ways to save
 
-| choice in the panel | file | for |
-|---|---|---|
-| One file for Legium (.json) | `highlights-legium-<date>.json` | Legium's **Import archive…** |
-| Plain JSON, for any app or script | `highlights-<date>.json` | Anything else; also what `tools/` reads |
-| notebook files, one per book (.zip) | `notebooks-<date>.zip` | Legium's **Import highlights…**, one book at a time; any tool that reads the reading app's notebook export |
+All three come from the same read of the notebook page, so they hold the same
+books, highlights and notes. They differ in how much is decided for you.
 
-The plain JSON has no Legium in it. It is the notebook page as read:
+**One file for Legium (.json)** → `highlights-legium-<date>.json`.
+Use this unless you have a reason not to. Every book in one file, for
+**Settings → Archive → Import archive…**. It is already in Legium's own terms:
+
+- a note is attached to the highlight it was written on, as one passage;
+- a passage that appears twice in a book is kept once;
+- places are written `p. 49`, or `loc. 1114` for a book without page numbers;
+- each person in a book's author line is a separate author, in order:
+  "Ada Marsh, Ben Ellery, and Cy Dunn" is three people, not one person with a
+  long name. Amazon doesn't say which of them translated or edited, so all are
+  credited as authors; change the role in Legium where it matters.
+
+Importing it again later adds only what is new; see
+[Exporting again later](#exporting-again-later).
+
+**Plain JSON, for any app or script** → `highlights-<date>.json`. Every
+book in one file, as Amazon lists it, with nothing decided: highlights and
+notes are separate records, and the author line is given as Amazon writes it
+(`author`) next to the people in it (`authors`). For other apps and your own
+scripts; it is also what `tools/` reads. Legium does not import it.
 
 ```json
 {
@@ -100,7 +116,8 @@ The plain JSON has no Legium in it. It is the notebook page as read:
   "scrapedAt": "2026-10-25T19:02:11.481Z",
   "shelf": 263,
   "books": [{
-    "asin": "B00ABC1234", "title": "…", "author": "…", "pages": 1,
+    "asin": "B00ABC1234", "title": "…", "pages": 1,
+    "author": "Ada Marsh and Ben Ellery", "authors": ["Ada Marsh", "Ben Ellery"],
     "records": [
       {"kind": "Highlight", "text": "…", "colour": "yellow", "page": "49", "location": "1114"},
       {"kind": "Note", "text": "…", "colour": "", "page": "49", "location": "1114"}
@@ -112,6 +129,16 @@ The plain JSON has no Legium in it. It is the notebook page as read:
 `shelf` counts every book in the library, `books` only those with highlights.
 A note follows the highlight it was written on, at the same location. `page` is
 empty for a book without page numbers; `location` is digits only.
+
+**notebook files (.zip)** → `notebooks-<date>.zip`. One zip
+holding one `.html` file per book, in the format the reading app's own **Export
+notebook** writes. Unzip it and import a book at a time with **Settings →
+Import → Import highlights…**. That is slow for a whole shelf, so use it for
+the books Legium already has: this import adds to the book that is there and
+skips passages already in it, where the `.json` would create a second copy of
+the book. One limit: the format has a single author line, and Legium credits
+it as one person, so "Ada Marsh and Ben Ellery" arrives as one name. Fix those
+by hand, or import the book from the `.json` instead if it is new to Legium.
 
 ---
 

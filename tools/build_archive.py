@@ -18,7 +18,7 @@ produces byte-identical ids and a second import updates nothing instead of
 duplicating everything.
 """
 
-import argparse, hashlib, json, unicodedata, uuid
+import argparse, hashlib, json, re, unicodedata, uuid
 
 NAMESPACE = uuid.UUID("6f9e5b3a-2c41-4d8e-9a17-5b0c8e2d4f36")
 # Named for the format the records were read from, following EntryOrigin's own
@@ -47,13 +47,42 @@ def match_key(text, note):
     return fold(text) + "\x1f" + fold(note)
 
 
+NAME_SUFFIX = re.compile(r"^(jr|sr|ii|iii|iv|phd|md)\.?$", re.I)
+
+
 def author_display(name):
-    """ImportedBook.authorDisplayName — a single comma means 'Surname, Given'."""
+    """ImportedBook.authorDisplayName — a single comma means 'Surname, Given',
+    unless what follows it is a suffix ("Martin Luther King, Jr.")."""
     t = (name or "").strip()
     parts = [p.strip() for p in t.split(",")]
-    if len(parts) == 2 and parts[0] and parts[1]:
+    if len(parts) == 2 and parts[0] and parts[1] and not NAME_SUFFIX.match(parts[1]):
         return f"{parts[1]} {parts[0]}"
     return t
+
+
+def split_authors(line):
+    """The people in one rail author line, in order — the userscript's
+    splitAuthors. "A and B" and "A, B, and C" are lists; credited whole, the
+    line became one person named all of them. A semicolon marks Amazon's own
+    scrambled metadata, kept exactly as found."""
+    text = " ".join((line or "").split())
+    if not text:
+        return []
+    is_list = re.search(r" and | & ", text) or text.count(",") >= 2
+    if ";" in text:
+        return [text]
+    if not is_list:
+        return [author_display(text)]
+    names = []
+    for part in re.split(r",| and | & ", text):
+        part = re.sub(r"^(and|&) ", "", part.strip())
+        if not part:
+            continue
+        if NAME_SUFFIX.match(part) and names:
+            names[-1] += f", {part}"
+        else:
+            names.append(part)
+    return names
 
 
 def locator(page, location):
@@ -124,22 +153,20 @@ def main():
             continue
 
         src_uuid = det("source", b["asin"])
-        creator = author_display(b.get("author", ""))
-
         contributions = []
-        if creator:
-            if creator not in seen_people:
-                cid = det("contributor", creator)
-                seen_people[creator] = cid
+        for position, name in enumerate(split_authors(b.get("author", ""))):
+            if name not in seen_people:
+                cid = det("contributor", name)
+                seen_people[name] = cid
                 contributors.append({
-                    "uuid": cid, "name": creator,
+                    "uuid": cid, "name": name,
                     # Left blank so Legium derives its own sort name, rather than
                     # this file asserting one for a person it may already know.
                     "sortName": "", "createdAt": stamp,
                 })
             contributions.append({
-                "contributorUUID": seen_people[creator],
-                "role": "author", "position": 0, "marcCode": "aut",
+                "contributorUUID": seen_people[name],
+                "role": "author", "position": position, "marcCode": "aut",
             })
 
         sources.append({

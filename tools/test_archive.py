@@ -171,6 +171,33 @@ class ArchiveTests(unittest.TestCase):
         self.assertEqual(got, [zlib.crc32(s.encode()) for s in samples])
 
 
+    def test_author_lines_split_into_people(self):
+        # The rail's author line, and who it names. Invented names.
+        cases = {
+            "Ada Marsh and Ben Ellery": ["Ada Marsh", "Ben Ellery"],
+            "Ada Marsh, Ben Ellery, and Cy Dunn": ["Ada Marsh", "Ben Ellery", "Cy Dunn"],
+            "Ada Marsh, Ben Ellery and Cy Dunn": ["Ada Marsh", "Ben Ellery", "Cy Dunn"],
+            "Ada Marsh & Ben Ellery": ["Ada Marsh", "Ben Ellery"],
+            "Okafor, Adaeze": ["Adaeze Okafor"],
+            "Sam Reyes, Jr.": ["Sam Reyes, Jr."],
+            "Ada Marsh, Sam Reyes, Jr., and Cy Dunn": ["Ada Marsh", "Sam Reyes, Jr.", "Cy Dunn"],
+            "Lee Ortiz and Kim;Novak A Park, Jo;Reyes": ["Lee Ortiz and Kim;Novak A Park, Jo;Reyes"],
+            "Andrea Anderson": ["Andrea Anderson"],
+            "  Ines   Varga ": ["Ines Varga"],
+            "": [],
+        }
+        lines = list(cases)
+        js = run_jsc(f"print(JSON.stringify({json.dumps(lines)}.map(X.splitAuthors)));")
+        self.assertEqual(js, [cases[l] for l in lines])
+        self.assertEqual([build_archive.split_authors(l) for l in lines], [cases[l] for l in lines])
+
+    def test_each_author_is_a_contributor_in_order(self):
+        paged = next(s for s in self.js["sources"] if s["title"] == "Paged Things")
+        names = {c["uuid"]: c["name"] for c in self.js["contributors"]}
+        self.assertEqual([(names[c["contributorUUID"]], c["position"]) for c in paged["contributions"]],
+                         [("Ruth Ibarra", 0), ("Tomas Lind", 1)])
+
+
 class UserscriptTests(unittest.TestCase):
     def test_userscript_is_built_from_the_current_core(self):
         subprocess.run([sys.executable, os.path.join(HERE, "build_userscript.py"), "--check"],
