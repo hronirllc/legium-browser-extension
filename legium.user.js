@@ -6,6 +6,7 @@
 // @author      Hronir LLC
 // @homepageURL https://github.com/hronirllc/legium-browser-extension
 // @supportURL  https://github.com/hronirllc/legium-browser-extension/issues
+// @icon        https://raw.githubusercontent.com/hronirllc/legium-browser-extension/main/extension/icons/icon-48.png
 // @updateURL   https://github.com/hronirllc/legium-browser-extension/releases/latest/download/legium.user.js
 // @downloadURL https://github.com/hronirllc/legium-browser-extension/releases/latest/download/legium.user.js
 // @match       https://read.amazon.com/notebook*

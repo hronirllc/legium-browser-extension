@@ -81,6 +81,8 @@ def build():
         ("author", "Hronir LLC"),
         ("homepageURL", manifest["homepage_url"]),
         ("supportURL", f"{manifest['homepage_url']}/issues"),
+        # Tampermonkey shows it in its list; the extension's own 48px icon.
+        ("icon", f"{manifest['homepage_url'].replace('github.com', 'raw.githubusercontent.com')}/main/extension/{manifest['icons']['48']}"),
         # The newest release's copy, not main's, so a change reaches friends
         # only once it is tagged.
         ("updateURL", f"{manifest['homepage_url']}/releases/latest/download/{os.path.basename(OUT)}"),
