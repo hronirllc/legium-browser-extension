@@ -91,7 +91,7 @@ Amazon's notebook page has no chapter names, no bookmarks, no publisher or year,
 and nothing from books copied onto a device over USB. See
 [What it does not give you](#what-it-does-not-give-you).
 
-If you want to export more metadata, you can do it from the Kindle phone app by opening your book and clicking the annotations view (the notebook icon) then clicking share. You can email/save that file and then import it into Legium (Settings -> import)
+If you want to export more metadata, you can do it from the Kindle phone app by opening your book and clicking the annotations view (the notebook icon) then clicking share. You can email/save that file and then import it into Legium with **Settings → Import → Import highlights…**.
 
 ## The ways to save
 
