@@ -1,4 +1,4 @@
-# highlights → Legium
+# Legium browser extension
 
 Saves every highlight and note in your library as one file that Legium
 imports. It reads Amazon's notebook page, <https://read.amazon.com/notebook>,
@@ -77,9 +77,9 @@ any you have edited, tagged or starred. Two cases bring in a second copy:
 
 ### If Legium already has some of these books
 
-The `.json` file matches books by an id made from the book, not by
+The `.json` file matches books by an id made from the book's ASIN, not by
 title, so a book you imported earlier from the reading app's own **Export
-notebook** would arrive a second time. For those books, choose **notebook
+notebook** would arrive a second time. For those books, choose **Notebook
 files (.zip)** instead, unzip it, and import each book's `.html`
 with **Settings → Import → Import highlights…**. That import merges into the
 book you have and skips passages already there. See
@@ -88,7 +88,7 @@ book you have and skips passages already there. See
 ## What it can't get
 
 Amazon's notebook page has no chapter names, no bookmarks, no publisher or year,
-and nothing from books you put on a device over USB. See
+and nothing from books copied onto a device over USB. See
 [What it does not give you](#what-it-does-not-give-you).
 
 ## The ways to save
@@ -103,7 +103,7 @@ decided for you.
 | Plain JSON (.json) | `highlights-<date>.json` | Other apps, your own scripts, and `tools/` |
 | Spreadsheet (.csv) | `highlights-<date>.csv` | Excel, Numbers, Google Sheets |
 | Document to read (.md) | `highlights-<date>.md` | Reading; any notes app that takes Markdown |
-| notebook files (.zip) | `notebooks-<date>.zip` | Legium's **Import highlights…**, a book at a time |
+| Notebook files (.zip) | `notebooks-<date>.zip` | Legium's **Import highlights…**, a book at a time |
 
 ### One file for Legium
 
@@ -169,7 +169,7 @@ book: its people, its counts and its Amazon link, then **Highlights**, each a
 quotation with its place, and **Notes**, each with its place and, when notes
 are attached, the start of the passage it was written on.
 
-### notebook files
+### Notebook files
 
 One `.zip` holding one `.html` file per book, in the format the reading app's
 own **Export notebook** writes. Unzip it and import a book at a time with
@@ -317,8 +317,7 @@ contents plus the local annotation sidecar. That is where the chapter data comes
 from, and there is no way to reach it in bulk:
 
 - **The Cloud Reader is a dead end.** It renders the book into a single
-  `<canvas>` with zero DOM text, behind obfuscated internals
-  (`GlyphRenderer`, `RendererCanvasInsertion`).
+  `<canvas>` with no text in the page to read.
 - **There is no API.** Readwise's own documentation says so plainly, which is
   why their sync is a browser extension reading the same notebook page
   this script reads. Bookcision is a bookmarklet on that page. Every tool in the

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Legium",
   "version": "2.3.0",
-  "description": "Saves every highlight and note in your notebook (read.amazon.com/notebook) as one file for Legium, as plain JSON, or as notebook files.",
+  "description": "Saves the highlights and notes from your reading notebook as one file for Legium, or as JSON, a spreadsheet or a document to read.",
   "homepage_url": "https://github.com/hronirllc/legium-browser-extension",
   "icons": {
     "48": "icons/icon.svg",

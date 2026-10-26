@@ -2,7 +2,7 @@
 // @name        Legium
 // @namespace   dev.hronir.legium
 // @version     2.3.0
-// @description Saves every highlight and note in your notebook (read.amazon.com/notebook) as one file for Legium, as plain JSON, or as notebook files.
+// @description Saves the highlights and notes from your reading notebook as one file for Legium, or as JSON, a spreadsheet or a document to read.
 // @author      Hronir LLC
 // @homepageURL https://github.com/hronirllc/legium-browser-extension
 // @supportURL  https://github.com/hronirllc/legium-browser-extension/issues
@@ -987,7 +987,7 @@
         });
 
         const slug = slugger();
-        slug('highlights');
+        slug('Highlights and notes');
         slug('Contents');
         const anchors = tidied.map((book) => {
             const anchor = slug(book.title);
@@ -999,7 +999,7 @@
         const totalHighlights = tidied.reduce((sum, book) => sum + book.highlights.length, 0);
         const totalNotes = tidied.reduce((sum, book) => sum + book.notes.length, 0);
         const out = [
-            '# highlights',
+            '# Highlights and notes',
             '',
             `Exported ${localDay(now)} from the notebook: ${plural(tidied.length, 'book')}, ` +
                 `${plural(totalHighlights, 'highlight')}, ${plural(totalNotes, 'note')}.`,
@@ -1135,7 +1135,7 @@
             padding: 14px 16px; border-radius: 10px; box-sizing: border-box;
             background: #fff; color: #111; border: 1px solid #d5d9d9;
             box-shadow: 0 4px 16px rgba(0,0,0,.18);
-            font: 13px/1.45 "Amazon Ember", Arial, sans-serif;
+            font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
         }
         #legium-export-panel[hidden], #legium-export-panel [hidden] { display: none; }
         #legium-export-panel h4 { margin: 0 0 8px; padding-right: 28px; font-size: 14px; }
@@ -1204,7 +1204,7 @@
         },
         {
             value: 'notebooks',
-            label: 'notebook files (.zip)',
+            label: 'Notebook files (.zip)',
             detail: 'One .zip holding an .html file per book, as the reading app exports them. ' +
                 'Import a book at a time with Settings → Import → Import highlights…; ' +
                 'use it for books Legium already has, which it adds to rather than copying.',
