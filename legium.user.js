@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Legium
 // @namespace   dev.hronir.legium
-// @version     2.3.0
+// @version     2.3.1
 // @description Saves the highlights and notes from your reading notebook as one file for Legium, or as JSON, a spreadsheet or a document to read.
 // @author      Hronir LLC
 // @homepageURL https://github.com/hronirllc/legium-browser-extension

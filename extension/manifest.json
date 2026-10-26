@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Legium",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "description": "Saves the highlights and notes from your reading notebook as one file for Legium, or as JSON, a spreadsheet or a document to read.",
   "homepage_url": "https://github.com/hronirllc/legium-browser-extension",
   "icons": {
