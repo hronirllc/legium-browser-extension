@@ -4,6 +4,10 @@ Saves every highlight and note in your library as one file that Legium
 imports. It reads Amazon's notebook page, <https://read.amazon.com/notebook>,
 in your own browser, while you are signed in. Nothing is sent anywhere else.
 
+![The export panel in the corner of the notebook page, offering the ways to save](docs/panel.png)
+
+*The books and passages in these pictures are invented.*
+
 ---
 
 ## Install
@@ -170,6 +174,8 @@ columns appear only when their switch is on.
 book: its people, its counts and its Amazon link, then **Highlights**, each a
 quotation with its place, and **Notes**, each with its place and, when notes
 are attached, the start of the passage it was written on.
+
+![A saved document: a contents list, then a book's section with its highlights](docs/document.png)
 
 ### Notebook files
 
