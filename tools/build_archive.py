@@ -99,7 +99,8 @@ def passages(records):
     out = []
     for r in records:
         if r["kind"] == "Highlight":
-            out.append({"text": r["text"], "note": "", "page": r.get("page", ""),
+            # A tidied plain JSON may already carry the note on its highlight.
+            out.append({"text": r["text"], "note": r.get("note", ""), "page": r.get("page", ""),
                         "location": r.get("location", "")})
             continue
         # A note lands on the passage just above when it sits within the span the

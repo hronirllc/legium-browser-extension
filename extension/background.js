@@ -9,24 +9,36 @@
 
 const NOTEBOOK_URL = 'https://read.amazon.com/notebook';
 
-/** Saves one file to the downloads folder. Resolves once it is written. */
-async function download({ filename, type, data }) {
+/**
+ * Saves one file: to the downloads folder, or wherever the reader picks in the
+ * Save dialog when `ask` is set. Resolves to the path it was written to.
+ */
+async function download({ filename, type, data, ask }) {
     const url = URL.createObjectURL(new Blob([data], { type }));
     try {
-        const id = await browser.downloads.download({ url, filename, conflictAction: 'uniquify' });
+        const id = await browser.downloads.download({
+            url, filename, saveAs: Boolean(ask), conflictAction: 'uniquify',
+        });
+        // Listening first and then asking, because a small file can finish
+        // before a listener added afterwards would hear about it.
         await new Promise((resolve, reject) => {
-            const listener = (delta) => {
-                if (delta.id !== id || !delta.state) return;
-                if (delta.state.current === 'complete') {
+            const settle = (state, error) => {
+                if (state === 'complete') {
                     browser.downloads.onChanged.removeListener(listener);
                     resolve();
-                } else if (delta.state.current === 'interrupted') {
+                } else if (state === 'interrupted') {
                     browser.downloads.onChanged.removeListener(listener);
-                    reject(new Error(`the download was interrupted (${delta.error ? delta.error.current : 'unknown'})`));
+                    reject(new Error(`the download was interrupted (${error || 'unknown'})`));
                 }
             };
+            const listener = (delta) => {
+                if (delta.id === id && delta.state) settle(delta.state.current, delta.error && delta.error.current);
+            };
             browser.downloads.onChanged.addListener(listener);
+            browser.downloads.search({ id }).then(([item]) => item && settle(item.state, item.error));
         });
+        const [item] = await browser.downloads.search({ id });
+        return item ? item.filename : filename;
     } finally {
         URL.revokeObjectURL(url);
     }
@@ -38,7 +50,7 @@ function deliver(file) {
 
 browser.runtime.onMessage.addListener((message) => {
     if (message && message.type === 'save') {
-        return deliver(message.file).then(() => ({ saved: message.file.filename }));
+        return deliver(message.file).then((savedAs) => ({ savedAs }));
     }
     return undefined;
 });

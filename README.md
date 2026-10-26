@@ -44,7 +44,8 @@ itself. On Safari, the free **Userscripts** app from the App Store runs it too.
 1. Open <https://read.amazon.com/notebook> and sign in. Your books are listed on
    the left.
 2. A panel, **Export highlights for Legium**, is in the top right corner. Leave
-   **One file for Legium (.json)** chosen and press **Export all books**.
+   **One file for Legium (.json)** chosen and press **Export all books**. For
+   the other choices, see [The ways to save](#the-ways-to-save).
 3. Wait. It reads one book at a time; a few hundred books take several
    minutes. Keep the tab open.
 4. Your browser saves `highlights-legium-<date>.json`.
@@ -84,61 +85,106 @@ Amazon's notebook page has no chapter names, no bookmarks, no publisher or year,
 and nothing from books you put on a device over USB. See
 [What it does not give you](#what-it-does-not-give-you).
 
-## The three ways to save
+## The ways to save
 
-All three come from the same read of the notebook page, so they hold the same
-books, highlights and notes. They differ in how much is decided for you.
+Every option comes from the same read of the notebook page, so each holds the
+same books, highlights and notes. They differ in shape and in how much is
+decided for you.
 
-**One file for Legium (.json)** → `highlights-legium-<date>.json`.
-Use this unless you have a reason not to. Every book in one file, for
-**Settings → Archive → Import archive…**. It is already in Legium's own terms:
+| choice in the panel | file | for |
+|---|---|---|
+| One file for Legium (.json) | `highlights-legium-<date>.json` | Legium's **Import archive…** |
+| Plain JSON (.json) | `highlights-<date>.json` | Other apps, your own scripts, and `tools/` |
+| Spreadsheet (.csv) | `highlights-<date>.csv` | Excel, Numbers, Google Sheets |
+| Document to read (.md) | `highlights-<date>.md` | Reading; any notes app that takes Markdown |
+| notebook files (.zip) | `notebooks-<date>.zip` | Legium's **Import highlights…**, a book at a time |
 
-- a note is attached to the highlight it was written on, as one passage;
-- a passage that appears twice in a book is kept once;
-- places are written `p. 49`, or `loc. 1114` for a book without page numbers;
-- each person in a book's author line is a separate author, in order:
-  "Ada Marsh, Ben Ellery, and Cy Dunn" is three people, not one person with a
-  long name. Amazon doesn't say which of them translated or edited, so all are
-  credited as authors; change the role in Legium where it matters.
+### One file for Legium
 
-Importing it again later adds only what is new; see
-[Exporting again later](#exporting-again-later).
+Use this unless you have a reason not to. Every book in one file, already in
+Legium's own terms — the four tidy-up steps below, always — and safe to import
+again later ([Exporting again later](#exporting-again-later)). Amazon doesn't
+say which of a book's people translated or edited it, so all are credited as
+authors; change the role in Legium where it matters. It is laid out as
+Legium's database is, books, people and passages in separate lists joined by
+ids, so it is awkward to read without Legium.
 
-**Plain JSON, for any app or script** → `highlights-<date>.json`. Every
-book in one file, as Amazon lists it, with nothing decided: highlights and
-notes are separate records, and the author line is given as Amazon writes it
-(`author`) next to the people in it (`authors`). For other apps and your own
-scripts; it is also what `tools/` reads. Legium does not import it.
+### Plain JSON, Spreadsheet and Document to read
+
+For using your highlights without Legium. These three share the **Tidy up**
+switches, which appear under the choices when one of them is picked. Each does
+one thing the Legium file always does; all are on to start with, and with all
+of them off you get the notebook page exactly as read.
+
+| switch | what it does |
+|---|---|
+| List each author separately | Amazon gives a book's people as one line. This adds them as a list: "Ada Marsh, Ben Ellery, and Cy Dunn" becomes three names, and "Marsh, Ada" becomes "Ada Marsh". |
+| Attach notes to their highlights | A note goes on the highlight it was written on, instead of being a record of its own beside it. A note with no highlight stays on its own. |
+| Drop repeated passages | A passage highlighted twice in one book is kept once. |
+| Write places as Legium does | Adds `p. 49`, or `loc. 1114` for a book without page numbers, beside the page and location as Amazon gives them. |
+
+Every book also carries its ASIN, Amazon's id for the ebook edition, and a
+link to its page in the Amazon store the notebook came from, for finding it
+again. The notebook page has no ISBN.
+
+**Plain JSON.** Every book in one file, highlights nested under their book:
 
 ```json
 {
   "format": "notebook-highlights", "version": 1,
   "scrapedAt": "2026-10-25T19:02:11.481Z",
   "shelf": 263,
+  "options": {"splitAuthors": true, "attachNotes": true, "dropRepeats": true, "places": true},
   "books": [{
-    "asin": "B00ABC1234", "title": "…", "pages": 1,
-    "author": "Ada Marsh and Ben Ellery", "authors": ["Ada Marsh", "Ben Ellery"],
+    "asin": "B00ABC1234", "link": "https://www.amazon.com/dp/B00ABC1234",
+    "title": "…", "author": "Ada Marsh and Ben Ellery", "authors": ["Ada Marsh", "Ben Ellery"], "pages": 1,
     "records": [
-      {"kind": "Highlight", "text": "…", "colour": "yellow", "page": "49", "location": "1114"},
-      {"kind": "Note", "text": "…", "colour": "", "page": "49", "location": "1114"}
+      {"kind": "Highlight", "text": "…", "note": "…", "colour": "yellow", "page": "49", "location": "1114", "place": "p. 49"},
+      {"kind": "Note", "text": "A note on no highlight.", "colour": "", "page": "", "location": "1200", "place": "loc. 1200"}
     ]
   }]
 }
 ```
 
-`shelf` counts every book in the library, `books` only those with highlights.
-A note follows the highlight it was written on, at the same location. `page` is
-empty for a book without page numbers; `location` is digits only.
+`options` says which switches were on. `shelf` counts every book in the
+library, `books` only those with highlights. `author` is always the line as
+Amazon wrote it; `authors`, a record's `note` and its `place` are there only
+when their switch is on. With notes not attached, a note is a `Note` record
+straight after its highlight, at the same location. `page` is empty for a book
+without page numbers; `location` is digits only.
 
-**notebook files (.zip)** → `notebooks-<date>.zip`. One zip
-holding one `.html` file per book, in the format the reading app's own **Export
-notebook** writes. Unzip it and import a book at a time with **Settings →
-Import → Import highlights…**. That is slow for a whole shelf, so use it for
-the books Legium already has: this import adds to the book that is there and
-skips passages already in it, where the `.json` would create a second copy of
-the book. One limit: the format has a single author line, and Legium credits
-it as one person, so "Ada Marsh and Ben Ellery" arrives as one name. Fix those
-by hand, or import the book from the `.json` instead if it is new to Legium.
+**Spreadsheet.** One row per highlight, and per note standing on its own:
+`title`, `authors` (separated by `; ` when listed), `asin`, `link`, `kind`,
+`text`, `note`, `colour`, `page`, `location`, `place`. The `note` and `place`
+columns appear only when their switch is on.
+
+**Document to read.** A contents list linking to each book, then a section per
+book: its people, its counts and its Amazon link, then **Highlights**, each a
+quotation with its place, and **Notes**, each with its place and, when notes
+are attached, the start of the passage it was written on.
+
+### notebook files
+
+One `.zip` holding one `.html` file per book, in the format the reading app's
+own **Export notebook** writes. Unzip it and import a book at a time with
+**Settings → Import → Import highlights…**. That is slow for a whole shelf, so
+use it for the books Legium already has: this import adds to the book that is
+there and skips passages already in it, where the `.json` would create a second
+copy of the book. One limit: the format has a single author line, and Legium
+credits it as one person, so "Ada Marsh and Ben Ellery" arrives as one name.
+Fix those by hand, or import the book from the `.json` instead if it is new to
+Legium.
+
+### Where the file goes
+
+To your downloads folder, unless you tick **Ask where to save**, which opens
+the Save dialog so you can choose the name and the folder. In the extension the
+dialog opens when the file is ready; cancel it and **Save again** brings it
+back, without exporting again. In the userscript on Chrome and Edge it opens
+when you press **Export all books**, since browsers only allow it straight after
+a click. Firefox and Safari don't let a web page open a Save dialog, so the
+userscript there has no such box: set Firefox to **Always ask you where to save
+files** (Settings → General → Downloads) if you want to choose.
 
 ---
 
@@ -168,7 +214,8 @@ For a shelf that overlaps what Legium already holds, the export is only the
 first step. The full path:
 
 ```sh
-# 1. Scrape. Choose "Plain JSON" in the panel and click "Export all books".
+# 1. Scrape. Choose "Plain JSON" in the panel, untick every Tidy up
+#    switch, and click "Export all books".
 #    -> out/web-export.json
 
 # 2. Compare against what Legium already has, and list what is genuinely new.
@@ -445,14 +492,19 @@ the extension).
 
 The exporter is written once, in `extension/notebook.js`, and knows nothing
 about how a file is saved: whoever loads it calls
-`legiumExport.start({ save })`.
+`legiumExport.start({ save, canAsk, choose })`. `save` saves a finished file,
+`canAsk` says whether the host can show a Save dialog, and `choose`, for a
+host that can only show one straight after a click, picks the file before the
+export starts.
 
 - **The extension** loads it as a content script, then `content.js`, whose
   `save` sends the file to `background.js`. The background script saves it with
   the downloads API. Sending a file somewhere else — a desktop app, say, through
   native messaging — would be a second branch in its `deliver`.
 - **The userscript** is `notebook.js` with a header made from the manifest and
-  a `save` that clicks a download link, written by `tools/build_userscript.py`.
+  a `save` that clicks a download link, or writes to a file chosen with
+  `showSaveFilePicker` where the browser has it, written by
+  `tools/build_userscript.py`.
 
 So after any change under `extension/`:
 

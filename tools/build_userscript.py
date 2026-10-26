@@ -22,15 +22,35 @@ MANIFEST = os.path.join(ROOT, "extension", "manifest.json")
 CORE = os.path.join(ROOT, "extension", "notebook.js")
 OUT = os.path.join(ROOT, "legium.user.js")
 
-# Saves through a link on the page: all a userscript with no grants can do.
+# Saves through a link on the page: all a userscript with no grants can do,
+# except where the browser offers a Save dialog to pages (Chrome and Edge's
+# showSaveFilePicker). That one must be opened straight after a click, so the
+# exporter calls `choose` when Export is pressed and hands the chosen file back
+# to `save` at the end.
 GLUE = """
 // ---------------------------------------------------------------- userscript
 
 (function () {
     'use strict';
 
+    const picker = typeof window.showSaveFilePicker === 'function';
+
     globalThis.legiumExport.start({
-        save({ filename, type, data }) {
+        canAsk: picker,
+        choose({ filename, type }) {
+            const extension = filename.slice(filename.lastIndexOf('.'));
+            return window.showSaveFilePicker({
+                suggestedName: filename,
+                types: [{ description: extension.slice(1).toUpperCase(), accept: { [type]: [extension] } }],
+            });
+        },
+        async save({ filename, type, data, target }) {
+            if (target) {
+                const writable = await target.createWritable();
+                await writable.write(new Blob([data], { type }));
+                await writable.close();
+                return { savedAs: target.name };
+            }
             const url = URL.createObjectURL(new Blob([data], { type }));
             const anchor = document.createElement('a');
             anchor.href = url;
@@ -39,7 +59,7 @@ GLUE = """
             anchor.click();
             anchor.remove();
             setTimeout(() => URL.revokeObjectURL(url), 10000);
-            return Promise.resolve();
+            return { savedAs: filename };
         },
     });
 })();

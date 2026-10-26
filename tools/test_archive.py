@@ -13,7 +13,7 @@ under `jsc` on an invented shelf and compares the two field by field.
     python3 tools/test_archive.py
 """
 
-import base64, hashlib, io, json, os, subprocess, sys, tempfile, unittest, uuid, zipfile, zlib
+import base64, csv, hashlib, io, json, os, subprocess, sys, tempfile, unittest, uuid, zipfile, zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -139,7 +139,7 @@ class ArchiveTests(unittest.TestCase):
 
     def test_plain_json_feeds_build_archive(self):
         plain = run_jsc(
-            f"print(JSON.stringify(X.writePlain({json.dumps(SHELF['books'])}, 5, new Date({json.dumps(STAMP)}))));"
+            f"print(JSON.stringify(X.writePlain({json.dumps(SHELF['books'])}, 5, {{}}, new Date({json.dumps(STAMP)}))));"
         )
         self.assertEqual(plain["books"][0]["records"], SHELF["books"][0]["records"])
         rebuilt = py_archive(plain)
@@ -196,6 +196,86 @@ class ArchiveTests(unittest.TestCase):
         names = {c["uuid"]: c["name"] for c in self.js["contributors"]}
         self.assertEqual([(names[c["contributorUUID"]], c["position"]) for c in paged["contributions"]],
                          [("Ruth Ibarra", 0), ("Tomas Lind", 1)])
+
+
+    # ---------------------------------------------------------- readable outputs
+
+    def plain(self, options):
+        return run_jsc(f"print(JSON.stringify(X.writePlain({json.dumps(SHELF['books'])}, 5, "
+                       f"{json.dumps(options)}, new Date({json.dumps(STAMP)}))));")
+
+    def test_plain_with_every_switch_off_is_the_page_as_read(self):
+        plain = self.plain({})
+        self.assertEqual(plain["options"], {"splitAuthors": False, "attachNotes": False,
+                                            "dropRepeats": False, "places": False})
+        # The repeated ASIN and the book with nothing in it are left out.
+        self.assertEqual([b["title"] for b in plain["books"]], ["The Lantern Keeper", "Paged Things", "Notes Only"])
+        for got, given in zip(plain["books"], [SHELF["books"][i] for i in (0, 1, 4)]):
+            self.assertEqual(got["records"], given["records"])
+            self.assertNotIn("authors", got)
+            self.assertEqual(got["link"], f"https://www.amazon.com/dp/{given['asin']}")
+
+    def test_plain_with_every_switch_on(self):
+        plain = self.plain({"splitAuthors": True, "attachNotes": True, "dropRepeats": True, "places": True})
+        lantern, paged = plain["books"][0], plain["books"][1]
+        self.assertEqual(lantern["authors"], ["Adaeze Okafor"])
+        self.assertEqual(paged["authors"], ["Ruth Ibarra", "Tomas Lind"])
+        first = lantern["records"][0]
+        self.assertEqual((first["kind"], first["note"], first["place"]),
+                         ("Highlight", "Maintenance as an act of faith.", "loc. 120"))
+        self.assertEqual([r["kind"] for r in lantern["records"]],
+                         ["Highlight", "Highlight", "Note", "Highlight", "Highlight"])
+        self.assertEqual(paged["records"][0]["place"], "p. xi")
+        # Folded notes still reach the same archive.
+        strip = lambda es: [{k: v for k, v in e.items() if k != "uuid"} for e in es]
+        rebuilt = py_archive(plain)
+        self.assertEqual(rebuilt["sources"], self.py["sources"])
+        self.assertEqual(strip(rebuilt["entries"]), strip(self.py["entries"]))
+
+    def test_repeats_are_dropped(self):
+        book = {"asin": "B9", "title": "T", "author": "", "pages": 1,
+                "records": [hl("Twice over.", "10"), hl("twice  over.", "20"), hl("Once.", "30")]}
+        got = run_jsc(f"print(JSON.stringify(X.tidyBook({json.dumps(book)}, {{dropRepeats: true}})));")
+        self.assertEqual([r["text"] for r in got["records"]], ["Twice over.", "Once."])
+
+    def test_csv_reads_back(self):
+        out = run_jsc(f"print(JSON.stringify(X.writeCsv({json.dumps(SHELF['books'])}, X.ALL_TIDY)));")
+        self.assertTrue(out.startswith("\ufeff"))
+        rows = list(csv.DictReader(io.StringIO(out[1:], newline="")))
+        self.assertEqual(list(rows[0]), ["title", "authors", "asin", "link", "kind", "text", "note",
+                                         "colour", "page", "location", "place"])
+        self.assertEqual(rows[0]["note"], "Maintenance as an act of faith.")
+        self.assertIn("Café au lait, naïveté, and “quotes”.", [r["text"] for r in rows])
+        self.assertEqual([r["authors"] for r in rows if r["title"] == "Paged Things"][0], "Ruth Ibarra; Tomas Lind")
+        bare = run_jsc(f"print(JSON.stringify(X.writeCsv({json.dumps(SHELF['books'])}, {{}})));")
+        header = next(csv.reader(io.StringIO(bare[1:])))
+        self.assertNotIn("note", header)
+        self.assertNotIn("place", header)
+
+    def test_markdown_reads_as_a_document(self):
+        books = json.loads(json.dumps(SHELF["books"]))
+        books[0]["title"] = "The *Lantern* Keeper"
+        out = run_jsc(f"print(JSON.stringify(X.writeMarkdown({json.dumps(books)}, X.ALL_TIDY, new Date({json.dumps(STAMP)}))));")
+        self.assertIn("Exported 2026-10-25 from the notebook: 3 books, 6 highlights, 3 notes.", out)
+        # Contents links match the anchors renderers give the headings.
+        self.assertIn("- [The \\*Lantern\\* Keeper](#the-lantern-keeper) — Adaeze Okafor\n"
+                      "- [Paged Things](#paged-things) — Ruth Ibarra, Tomas Lind\n"
+                      "- [Notes Only](#notes-only)\n", out)
+        self.assertIn("## The \\*Lantern\\* Keeper\n\n*by Adaeze Okafor*  \n4 highlights · 2 notes · "
+                      "[Amazon](https://www.amazon.com/dp/B000TEST01) · ASIN B000TEST01", out)
+        self.assertIn("### Highlights\n\n> The light was kept because someone kept it.\n>\n> — *loc. 120*", out)
+        self.assertIn("### Notes\n\n- **loc. 120** — Maintenance as an act of faith.  \n"
+                      "  *on “The light was kept because someone kept it.”*\n"
+                      "- **loc. 900** — Far from any highlight.", out)
+        self.assertIn("## Notes Only\n\n1 note · [Amazon]", out)
+        self.assertNotIn("Nothing Marked", out)
+        raw = run_jsc(f"print(JSON.stringify(X.writeMarkdown({json.dumps(books)}, {{}}, new Date({json.dumps(STAMP)}))));")
+        self.assertIn("> — *Location 120*", raw)
+        self.assertIn("- **Location 125** — Maintenance as an act of faith.\n", raw)
+
+    def test_heading_anchors_count_repeats(self):
+        got = run_jsc("const s = X.slugger(); print(JSON.stringify(['Notes', 'Café & Crème: A Life!', 'Notes', 'notes'].map(s)));")
+        self.assertEqual(got, ["notes", "café--crème-a-life", "notes-1", "notes-2"])
 
 
 class UserscriptTests(unittest.TestCase):

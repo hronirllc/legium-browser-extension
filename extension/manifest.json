@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Legium",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Saves every highlight and note in your notebook (read.amazon.com/notebook) as one file for Legium, as plain JSON, or as notebook files.",
   "icons": {
     "48": "icons/icon.svg",
